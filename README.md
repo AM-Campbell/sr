@@ -75,8 +75,11 @@ The review server opens at `http://127.0.0.1:8791`. Press Space to flip, 1 for w
 
 ```
 sr scan [PATH ...]            Scan files, sync cards to database.
-sr review [PATH ...] [--tag TAG]  Scan, then start review in browser.
+sr review [PATH ...]          Scan, then start review in browser.
+  --tag TAG                   Filter by tag.
+  --flag FLAG                 Filter by flag (e.g. edit_later).
 sr status                     Show card counts and due cards.
+sr browse [--port PORT]       Browse and manage cards in browser.
 ```
 
 Paths can be files or directories. Defaults to current directory if omitted.
@@ -113,29 +116,6 @@ A: Tokyo
 
 Multi-line answers work — continuation lines are included until the next blank line.
 
-### Suspending cards
-
-Prefix `Q:` with `!` to suspend a card:
-
-```markdown
-Q: This card is active.
-A: It will appear in reviews.
-
-!Q: This card is suspended.
-A: It will not appear until unsuspended.
-```
-
-Suspend all cards in a file with frontmatter:
-
-```markdown
----
-sr_adapter: basic_qa
-suspended: true
----
-```
-
-Remove the `!` or set `suspended: false`, then re-scan. The card becomes active.
-
 ## Adapters
 
 An adapter is a Python file in `SR_DIR/adapters/` that knows how to parse a file format into cards and render them as HTML for review.
@@ -160,7 +140,6 @@ Each card returned by `parse()` has:
 | `content`      | dict       | Arbitrary data. Only the adapter interprets it.|
 | `display_text` | str        | Short preview for logs/status.                 |
 | `gradable`     | bool       | False → "Next" button instead of grading.      |
-| `suspended`    | bool       | True → card is inactive until unsuspended.     |
 | `tags`         | list[str]  | Tags for filtering.                            |
 | `relations`    | list[Relation] | Relations to other cards.                  |
 
@@ -209,10 +188,35 @@ review_port = 8791
 
 ## Review Keyboard Shortcuts
 
-| Key     | Action           |
-|---------|------------------|
-| Space   | Flip card        |
-| 1       | Wrong            |
-| 2       | Correct          |
-| Enter   | Next (autograde) |
-| z / u   | Undo             |
+| Key     | Action                        |
+|---------|-------------------------------|
+| Space   | Flip card                     |
+| 1       | Wrong                         |
+| 2       | Correct                       |
+| Enter   | Next (autograde)              |
+| f       | Toggle flag (`edit_later`)    |
+| e       | Open source file in editor    |
+| s       | Suspend card and advance      |
+| z / u   | Undo                          |
+
+## Flagging Cards
+
+During review, press `f` to flag a card for later editing. Flagged cards can be reviewed separately with `sr review --flag edit_later`. Flags are managed in bulk via `sr browse`.
+
+## Editing Source Files
+
+Press `e` during review to open the card's source file in your editor at the correct line. Configure the editor command in `settings.toml`:
+
+```toml
+edit_command = "kitty -e vim +{line} {file}"
+```
+
+If not configured, sr auto-detects a terminal emulator and uses `$EDITOR`.
+
+## Suspending Cards
+
+Press `s` during review to suspend the current card (`active` → `inactive`). The card is removed from the review queue. Reactivate cards via `sr browse`.
+
+## Browsing Cards
+
+`sr browse` opens a web UI for managing all cards. Filter by status, tag, or flag. Click a card to view details, toggle status, or manage flags.

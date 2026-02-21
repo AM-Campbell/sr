@@ -36,10 +36,11 @@ scheduler = "sm2"
 review_port = 8791
 ```
 
-| Key           | Type | Default | Description              |
-|---------------|------|---------|--------------------------|
-| `scheduler`   | str  | `"sm2"` | Scheduler module name    |
-| `review_port` | int  | `8791`  | Review server port       |
+| Key            | Type | Default | Description                                |
+|----------------|------|---------|--------------------------------------------|
+| `scheduler`    | str  | `"sm2"` | Scheduler module name                      |
+| `review_port`  | int  | `8791`  | Review server port                         |
+| `edit_command` | str  | (auto)  | Editor command template (`{file}`, `{line}`) |
 
 ## Source Discovery
 
@@ -65,7 +66,7 @@ The full frontmatter dict is passed to the adapter as `config`. Recognized keys:
 |--------------|------------|------------------------------------------|
 | `sr_adapter` | str        | **Required.** Adapter name.              |
 | `tags`       | list[str]  | Tags applied to all cards in this file.  |
-| `suspended`  | bool       | Suspend all cards in this file.          |
+| `suspended`  | bool       | Default new cards from this source to `inactive`. |
 | *(other)*    | any        | Passed through to adapter as config.     |
 
 Files without `sr_adapter` in frontmatter are silently skipped.
@@ -88,11 +89,10 @@ On scan, sr matches source cards to the database by `(source_path, card_key, ada
 
 | Source state        | DB state             | Action                                                                 |
 |---------------------|----------------------|------------------------------------------------------------------------|
-| Present, same hash  | active               | No-op. Sync tags.                                                      |
-| Present, same hash  | active, now suspended| Status → `inactive`. Remove recommendations.                          |
-| Present, same hash  | inactive, now unsuspended | Status → `active`. Scheduler `on_card_created`.                  |
-| Present, new hash   | active or inactive   | Old card → `deleted` + key renamed. New card inserted. `is_replaced_by` relation. Scheduler `on_card_replaced`. |
-| Present             | not in DB            | New card inserted. Scheduler `on_card_created`. Status set by `suspended` flag.  |
+| Present, same hash  | active or inactive   | No-op. Sync tags. Status unchanged (user suspensions preserved).       |
+| Present, new hash   | active               | Old card → `deleted` + key renamed. New card inserted as `active`. `is_replaced_by` relation. Scheduler `on_card_replaced`. |
+| Present, new hash   | inactive             | Old card → `deleted` + key renamed. New card inserted as `inactive` (preserves user suspension). |
+| Present             | not in DB            | New card inserted. Status `inactive` if source has `suspended: true`, else `active`. Scheduler `on_card_created`.  |
 | Missing from source | active or inactive   | Status → `deleted`. Recommendations removed.                          |
 
 Only cards whose `source_path` falls under the scanned paths are considered for deletion. Cards from unscanned paths are untouched.
@@ -149,6 +149,19 @@ Typed directed graph between cards.
 | `tag`     | TEXT    | Tag string.                    |
 
 **Primary key:** `(card_id, tag)`.
+
+### `card_flags`
+
+Freeform flags on cards. Well-known flags: `edit_later`, `needs_work`.
+
+| Column       | Type    | Description                    |
+|--------------|---------|--------------------------------|
+| `card_id`    | INTEGER | References `cards(id)`.        |
+| `flag`       | TEXT    | Flag name (freeform string).   |
+| `note`       | TEXT    | Optional note.                 |
+| `created_at` | TEXT    | ISO timestamp.                 |
+
+**Primary key:** `(card_id, flag)`.
 
 ### `review_log`
 
@@ -214,7 +227,6 @@ class Card:
     content: dict           # Stored as JSON. Only the adapter reads it.
     display_text: str = ""  # Short preview (for sr status, logs).
     gradable: bool = True   # False → no grade buttons, "Next" instead.
-    suspended: bool = False # True → card inserted as inactive.
     tags: list[str] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
 ```
@@ -228,16 +240,6 @@ class Relation:
     relation_type: str                # e.g. "mutually_exclusive".
     target_source: str | None = None  # source_path. None = same source.
 ```
-
-### Suspension
-
-The adapter controls suspension. Two patterns:
-
-**File-level** (frontmatter): `suspended: true` — adapter reads from config, sets `card.suspended = True` on all cards.
-
-**Per-card** (adapter convention): The `basic_qa` adapter uses `!Q:` prefix to suspend individual cards. Other adapters can use whatever convention makes sense for their format.
-
-An external tool modifies the source file (flipping the flag), then `sr scan` picks up the change.
 
 ### Autograde
 
@@ -334,7 +336,9 @@ If any scheduler method raises, the core logs a warning and continues. Card sele
 sr scan [PATH ...]         Scan sources, sync cards to DB.
 sr review [PATH ...]       Scan, then start review server.
   --tag TAG                Filter review to cards with this tag.
+  --flag FLAG              Filter review to cards with this flag.
 sr status                  Show card counts and due counts.
+sr browse [--port PORT]    Browse and manage cards in browser.
 ```
 
 Paths default to cwd if omitted.
@@ -349,11 +353,15 @@ Paths default to cwd if omitted.
 |--------|---------------|------------------------------------------------|
 | GET    | `/`           | Review UI (single HTML page).                  |
 | GET    | `/api/session`| Get session token.                             |
-| GET    | `/api/next`   | Next card: `{id, gradable, front_html, session_stats}` or `{done: true}`. |
+| GET    | `/api/next`   | Next card: `{id, gradable, front_html, flags, session_stats}` or `{done: true}`. |
 | POST   | `/api/flip`   | Flip card: `{back_html}`.                      |
 | POST   | `/api/grade`  | Submit grade: `{grade, feedback?, response?}` → `{ok}`. |
 | POST   | `/api/skip`   | Skip non-gradable card (no grade logged) → `{ok}`. |
 | POST   | `/api/undo`   | Re-present previous card → `{ok, front_html, back_html}`. |
+| POST   | `/api/flag`   | Flag current card: `{flag, note?}` → `{ok, flags}`. |
+| POST   | `/api/unflag` | Remove flag from current card: `{flag}` → `{ok, flags}`. |
+| POST   | `/api/edit`   | Open current card's source file in editor → `{ok}`. |
+| POST   | `/api/suspend`| Suspend current card (inactive) and advance → `{ok, suspended}`. |
 | GET    | `/api/status` | Session stats: `{reviewed, remaining}`.        |
 
 ### Timing
@@ -372,11 +380,46 @@ Reads from `recommendations` table, joins `card_state` (active only, gradable on
 | 1       | Grade wrong.                        |
 | 2       | Grade correct.                      |
 | Enter   | Next (autograde / non-gradable).    |
+| f       | Toggle `edit_later` flag.           |
+| e       | Open source file in editor.         |
+| s       | Suspend card and advance.           |
 | z / u   | Undo.                               |
 
 ### Undo
 
 Re-presents the previous card already flipped (front + back visible). The original review stays in `review_log` (append-only). The re-review is logged as a new event. The scheduler sees it as a normal `on_review`.
+
+### Edit from review
+
+Pressing `e` during review opens the current card's source file in an editor. The edit command is resolved in order:
+
+1. `edit_command` in `settings.toml` — template with `{file}` and `{line}` placeholders.
+2. Auto-detect terminal emulator (`kitty`, `alacritty`, `foot`, `xterm`) + `$EDITOR`.
+3. Fallback: `$EDITOR` (or `vim`) directly.
+
+The `basic_qa` adapter stores `source_line` in card content so the editor opens at the right line.
+
+```toml
+# settings.toml
+edit_command = "kitty -e vim +{line} {file}"
+```
+
+## Browse Server
+
+`sr browse` starts an HTTP server for bulk card management (default port: `review_port + 1` = 8792).
+
+### Endpoints
+
+| Method | Path                      | Description                                    |
+|--------|---------------------------|------------------------------------------------|
+| GET    | `/`                       | Browse UI (single HTML page).                  |
+| GET    | `/api/cards`              | List cards. Query: `status`, `tag`, `flag`, `q`, `offset`, `limit`. |
+| GET    | `/api/cards/{id}`         | Card detail + review history + flags.          |
+| POST   | `/api/cards/{id}/status`  | Set status: `{"status": "active"|"inactive"}`. |
+| POST   | `/api/cards/{id}/flag`    | Add flag: `{"flag": "...", "note": "..."}`.    |
+| POST   | `/api/cards/{id}/unflag`  | Remove flag: `{"flag": "..."}`.                |
+| GET    | `/api/tags`               | Distinct tags list.                            |
+| GET    | `/api/flags`              | Distinct flags list.                           |
 
 ## SM-2 Scheduler
 

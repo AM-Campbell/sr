@@ -12,5 +12,5 @@ A: This card should be suspended.
 Q: Active card three
 A: This card is also active.
 
-!Q: Suspended card four
+Q: Suspended card four
 A: Also suspended.
