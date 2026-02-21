@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sr"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Spaced Repetition System"
+
+[project.scripts]
+sr = "sr.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sr*"]
+
+[tool.setuptools.package-data]
+"sr.templates" = ["*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

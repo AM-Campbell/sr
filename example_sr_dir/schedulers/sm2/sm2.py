@@ -4,27 +4,10 @@ Maintains per-card state: ease factor, interval, repetition count.
 Uses its own SQLite database for scheduling state.
 """
 
-import dataclasses
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-
-@dataclasses.dataclass
-class Recommendation:
-    card_id: int
-    time: str
-    precision_seconds: int
-
-
-@dataclasses.dataclass
-class ReviewEvent:
-    card_id: int
-    timestamp: str
-    grade: int
-    time_on_front_ms: int
-    time_on_card_ms: int
-    feedback: str | None
-    response: dict | None
+from sr.models import Recommendation, ReviewEvent
 
 
 SM2_SCHEMA = """

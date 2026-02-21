@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sr browse</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<style>
+:root {
+    --bg: #1c1b1a;
+    --bg-card: #272524;
+    --bg-inset: #1f1e1d;
+    --border: #3a3634;
+    --border-focus: #6b6560;
+    --text: #d4cfc9;
+    --text-muted: #8a8480;
+    --text-dim: #5c5753;
+    --accent: #87CEAB;
+    --correct: #5cb85c;
+    --wrong: #d9534f;
+    --flag: #f0c040;
+    --tag: #8bb878;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text); padding: 1.5rem;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+#top-bar {
+    display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: center;
+    margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border);
+}
+#top-bar select, #top-bar input {
+    padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-card); color: var(--text); font-size: 0.85rem;
+}
+#top-bar input { width: 200px; }
+#card-table { width: 100%; border-collapse: collapse; }
+#card-table th {
+    text-align: left; padding: 0.5rem 0.6rem; border-bottom: 2px solid var(--border);
+    font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
+}
+#card-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+#card-table tr:hover { background: var(--bg-card); cursor: pointer; }
+.badge {
+    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
+    font-size: 0.75rem; font-weight: 600;
+}
+.badge-active { background: rgba(92,184,92,0.12); color: var(--correct); }
+.badge-inactive { background: rgba(217,83,79,0.12); color: var(--wrong); }
+.badge-flag { background: rgba(240,192,64,0.12); color: var(--flag); margin-left: 0.3rem; }
+.badge-tag { background: rgba(139,184,120,0.12); color: var(--tag); margin-right: 0.3rem; }
+#pagination {
+    display: flex; gap: 1rem; align-items: center; justify-content: center;
+    margin-top: 1rem; color: var(--text-muted); font-size: 0.85rem;
+}
+#pagination button {
+    padding: 0.3rem 0.8rem; border: 1px solid var(--border); border-radius: 6px;
+    background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.85rem;
+}
+#pagination button:hover { border-color: var(--border-focus); color: var(--text); }
+#pagination button:disabled { opacity: 0.4; cursor: default; }
+#detail-panel {
+    display: none; position: fixed; right: 0; top: 0; width: 420px; height: 100vh;
+    background: var(--bg-card); border-left: 2px solid var(--border); padding: 1.5rem;
+    overflow-y: auto; z-index: 100;
+}
+#detail-panel .close-btn {
+    position: absolute; top: 0.8rem; right: 0.8rem; background: none; border: none;
+    color: var(--text-muted); font-size: 1.2rem; cursor: pointer;
+}
+#detail-panel .close-btn:hover { color: var(--text); }
+#detail-panel h3 { margin-bottom: 0.8rem; color: var(--accent); }
+#detail-panel .section { margin-bottom: 1.2rem; }
+#detail-panel .section-title { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.3rem; }
+#detail-panel .content-box {
+    background: var(--bg-inset); padding: 0.8rem; border-radius: 6px;
+    font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap;
+}
+.detail-btn {
+    padding: 0.3rem 0.7rem; border: 1px solid var(--border); border-radius: 6px;
+    background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.8rem;
+    margin-right: 0.3rem; margin-bottom: 0.3rem;
+}
+.detail-btn:hover { border-color: var(--border-focus); color: var(--text); }
+.detail-btn.active { border-color: var(--flag); color: var(--flag); }
+.card-preview {
+    background: var(--bg-inset); padding: 1rem; border-radius: 8px;
+    font-size: 0.95rem; line-height: 1.6; text-align: center;
+}
+.card-preview pre { text-align: left; background: var(--bg); padding: 0.8rem; border-radius: 6px; overflow-x: auto; }
+.card-preview code { font-family: "JetBrains Mono", "Fira Code", monospace; }
+.card-divider {
+    border: none; border-top: 1px solid var(--border); margin: 0.8rem 0;
+}
+#total-count { color: var(--text-muted); font-size: 0.85rem; margin-left: auto; }
+</style>
+</head>
+<body>
+<div id="top-bar">
+    <select id="filter-status" onchange="loadCards()">
+        <option value="">All statuses</option>
+        <option value="active" selected>Active</option>
+        <option value="inactive">Inactive</option>
+    </select>
+    <select id="filter-tag" onchange="loadCards()">
+        <option value="">All tags</option>
+    </select>
+    <select id="filter-flag" onchange="loadCards()">
+        <option value="">All flags</option>
+    </select>
+    <input id="filter-search" type="text" placeholder="Search..." oninput="debounceSearch()">
+    <span id="total-count"></span>
+</div>
+<table id="card-table">
+    <thead><tr>
+        <th>Card</th><th>Status</th><th>Tags</th><th>Source</th><th>Flags</th>
+    </tr></thead>
+    <tbody id="card-tbody"></tbody>
+</table>
+<div id="pagination">
+    <button id="prev-btn" onclick="prevPage()" disabled>&larr; Prev</button>
+    <span id="page-info"></span>
+    <button id="next-btn" onclick="nextPage()" disabled>Next &rarr;</button>
+</div>
+<div id="detail-panel">
+    <button class="close-btn" onclick="closeDetail()">&times;</button>
+    <div id="detail-content"></div>
+</div>
+<script>
+let offset = 0;
+const limit = 50;
+let totalCards = 0;
+let searchTimeout = null;
+
+async function api(method, path, body) {
+    const opts = {method, headers: {"Content-Type": "application/json"}};
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(path, opts);
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+}
+
+async function loadFilters() {
+    try {
+        const [tags, flags] = await Promise.all([api("GET", "/api/tags"), api("GET", "/api/flags")]);
+        const tagSel = document.getElementById("filter-tag");
+        tags.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; tagSel.appendChild(o); });
+        const flagSel = document.getElementById("filter-flag");
+        flags.forEach(f => { const o = document.createElement("option"); o.value = f; o.textContent = f; flagSel.appendChild(o); });
+    } catch(e) { console.error(e); }
+}
+
+async function loadCards() {
+    offset = 0;
+    await fetchCards();
+}
+
+function debounceSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(loadCards, 300);
+}
+
+async function fetchCards() {
+    const params = new URLSearchParams();
+    const status = document.getElementById("filter-status").value;
+    const tag = document.getElementById("filter-tag").value;
+    const flag = document.getElementById("filter-flag").value;
+    const q = document.getElementById("filter-search").value;
+    if (status) params.set("status", status);
+    if (tag) params.set("tag", tag);
+    if (flag) params.set("flag", flag);
+    if (q) params.set("q", q);
+    params.set("offset", offset);
+    params.set("limit", limit);
+    try {
+        const data = await api("GET", "/api/cards?" + params.toString());
+        totalCards = data.total;
+        document.getElementById("total-count").textContent = totalCards + " card(s)";
+        renderTable(data.cards);
+        updatePagination();
+    } catch(e) { console.error(e); }
+}
+
+function renderTable(cards) {
+    const tbody = document.getElementById("card-tbody");
+    tbody.innerHTML = "";
+    cards.forEach(c => {
+        const tr = document.createElement("tr");
+        tr.onclick = () => showDetail(c.id);
+        const source = c.source_path.split("/").pop();
+        const flagBadges = (c.flags || []).map(f => `<span class="badge badge-flag">${esc(f)}</span>`).join("");
+        const tagBadges = (c.tags || []).map(t => `<span class="badge badge-tag">${esc(t)}</span>`).join("");
+        const statusCls = c.status === "active" ? "badge-active" : "badge-inactive";
+        tr.innerHTML = `
+            <td>${esc(c.display_text || "(no text)")}</td>
+            <td><span class="badge ${statusCls}">${c.status}</span></td>
+            <td>${tagBadges}</td>
+            <td title="${esc(c.source_path)}">${esc(source)}</td>
+            <td>${flagBadges}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+function updatePagination() {
+    const maxPage = Math.max(1, Math.ceil(totalCards / limit));
+    const curPage = Math.floor(offset / limit) + 1;
+    document.getElementById("page-info").textContent = `Page ${curPage} of ${maxPage}`;
+    document.getElementById("prev-btn").disabled = offset === 0;
+    document.getElementById("next-btn").disabled = offset + limit >= totalCards;
+}
+
+function prevPage() { offset = Math.max(0, offset - limit); fetchCards(); }
+function nextPage() { offset += limit; fetchCards(); }
+
+async function showDetail(cardId) {
+    try {
+        const data = await api("GET", "/api/cards/" + cardId);
+        const c = data;
+        const statusCls = c.status === "active" ? "badge-active" : "badge-inactive";
+        const toggleLabel = c.status === "active" ? "Suspend" : "Activate";
+        const flagBtns = (c.flags || []).map(f =>
+            `<button class="detail-btn active" onclick="removeFlag(${c.id},'${esc(f.flag)}')">${esc(f.flag)} &times;</button>`
+        ).join("");
+        const tagBtns = (c.tags || []).map(t =>
+            `<button class="detail-btn" style="border-color:var(--tag);color:var(--tag);" onclick="removeTag(${c.id},'${esc(t)}')">${esc(t)} &times;</button>`
+        ).join("");
+        const reviews = (c.reviews || []).map(r =>
+            `<div style="font-size:0.8rem;color:var(--text-muted);">${r.timestamp} — ${r.grade === 1 ? "✓" : "✗"}${r.feedback ? " (" + r.feedback + ")" : ""}</div>`
+        ).join("");
+        document.getElementById("detail-content").innerHTML = `
+            <h3>Card #${c.id}</h3>
+            <div class="section">
+                <div class="section-title">Front</div>
+                <div class="card-preview">${c.front_html || esc(c.display_text || "")}</div>
+            </div>
+            <div class="section">
+                <div class="section-title">Back</div>
+                <div class="card-preview">${c.back_html || ""}</div>
+            </div>
+            <div class="section">
+                <div class="section-title">Source</div>
+                <div style="font-size:0.85rem; display:flex; align-items:center; gap:0.5rem;">
+                    ${esc(c.source_path)}
+                    <button class="detail-btn" onclick="editCard(${c.id})">&#9998; Edit</button>
+                </div>
+            </div>
+            <div class="section">
+                <div class="section-title">Status</div>
+                <span class="badge ${statusCls}">${c.status}</span>
+                <button class="detail-btn" onclick="toggleStatus(${c.id},'${c.status}')" style="margin-left:0.5rem">${toggleLabel}</button>
+            </div>
+            <div class="section">
+                <div class="section-title">Tags</div>
+                ${tagBtns}
+                <button class="detail-btn" onclick="promptAddTag(${c.id})">+ Add tag</button>
+            </div>
+            <div class="section">
+                <div class="section-title">Flags</div>
+                ${flagBtns}
+                <button class="detail-btn" onclick="promptAddFlag(${c.id})">+ Add flag</button>
+            </div>
+            <div class="section">
+                <div class="section-title">Review History</div>
+                ${reviews || '<div style="font-size:0.85rem;color:var(--text-dim);">No reviews yet.</div>'}
+            </div>
+        `;
+        document.getElementById("detail-panel").style.display = "block";
+    } catch(e) { console.error(e); }
+}
+
+function closeDetail() { document.getElementById("detail-panel").style.display = "none"; }
+
+async function toggleStatus(cardId, current) {
+    const newStatus = current === "active" ? "inactive" : "active";
+    try {
+        await api("POST", "/api/cards/" + cardId + "/status", {status: newStatus});
+        showDetail(cardId);
+        fetchCards();
+    } catch(e) { console.error(e); }
+}
+
+async function removeFlag(cardId, flag) {
+    try {
+        await api("POST", "/api/cards/" + cardId + "/unflag", {flag: flag});
+        showDetail(cardId);
+        fetchCards();
+    } catch(e) { console.error(e); }
+}
+
+async function removeTag(cardId, tag) {
+    try {
+        await api("POST", "/api/cards/" + cardId + "/untag", {tag: tag});
+        showDetail(cardId);
+        fetchCards();
+    } catch(e) { console.error(e); }
+}
+
+async function promptAddTag(cardId) {
+    const tag = prompt("Tag name:");
+    if (!tag) return;
+    try {
+        await api("POST", "/api/cards/" + cardId + "/tag", {tag: tag});
+        showDetail(cardId);
+        fetchCards();
+    } catch(e) { console.error(e); }
+}
+
+async function editCard(cardId) {
+    try {
+        await api("POST", "/api/cards/" + cardId + "/edit");
+    } catch(e) { console.error(e); }
+}
+
+async function promptAddFlag(cardId) {
+    const flag = prompt("Flag name (e.g. edit_later, needs_work):");
+    if (!flag) return;
+    const note = prompt("Note (optional):");
+    try {
+        await api("POST", "/api/cards/" + cardId + "/flag", {flag: flag, note: note || null});
+        showDetail(cardId);
+        fetchCards();
+    } catch(e) { console.error(e); }
+}
+
+loadFilters();
+loadCards();
+</script>
+</body>
+</html>

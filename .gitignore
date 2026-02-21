@@ -1,3 +1,6 @@
 WHERE_WE_LEFT_OFF.md
 *.db
 __pycache__/
+.venv/
+*.egg-info/
+.pytest_cache/

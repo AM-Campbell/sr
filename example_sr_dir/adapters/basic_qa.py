@@ -17,26 +17,10 @@ Example:
     A: The number of items in a container.
 """
 
-import dataclasses
 import re
 import html
 
-
-@dataclasses.dataclass
-class Relation:
-    target_key: str
-    relation_type: str
-    target_source: str | None = None
-
-
-@dataclasses.dataclass
-class Card:
-    key: str
-    content: dict
-    display_text: str = ""
-    gradable: bool = True
-    tags: list[str] = dataclasses.field(default_factory=list)
-    relations: list[Relation] = dataclasses.field(default_factory=list)
+from sr.models import Card, Relation
 
 
 class Adapter:
