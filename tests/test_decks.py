@@ -34,7 +34,8 @@ def test_single_source():
     assert len(tree) == 1
     assert tree[0]["total"] == 2
     assert tree[0]["active"] == 2
-    assert tree[0]["due"] == 1
+    assert tree[0]["new"] == 1  # q1 has no recommendation
+    assert tree[0]["review"] == 1  # q2 is due
     conn.close()
 
 
@@ -51,15 +52,16 @@ def test_multiple_sources():
 
 def test_aggregate_stats():
     d = {
-        "__stats__": {"total": 1, "active": 1, "due": 0},
+        "__stats__": {"total": 1, "active": 1, "new": 0, "review": 0},
         "child": {
-            "__stats__": {"total": 2, "active": 1, "due": 1}
+            "__stats__": {"total": 2, "active": 1, "new": 1, "review": 0}
         }
     }
     stats = _aggregate_stats(d)
     assert stats["total"] == 3
     assert stats["active"] == 2
-    assert stats["due"] == 1
+    assert stats["new"] == 1
+    assert stats["review"] == 0
 
 
 def test_inactive_cards_counted():
@@ -155,8 +157,10 @@ def test_due_count_accuracy():
     _insert_card(conn, "/notes/test.md", "q2", status="active", is_due=False)
     _insert_card(conn, "/notes/test.md", "q3", status="inactive", is_due=True)
     tree = build_deck_tree(conn)
-    # Only q1 is active and due
-    assert tree[0]["due"] == 1
+    # Only q1 is active and due (has a recommendation)
+    assert tree[0]["review"] == 1
+    # q2 is active with no recommendation (not due) — is_new but not is_review
+    assert tree[0]["new"] == 1
     assert tree[0]["active"] == 2
     assert tree[0]["total"] == 3
     conn.close()

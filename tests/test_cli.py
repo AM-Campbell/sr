@@ -41,14 +41,15 @@ def test_scan_dispatches_correctly():
             mock_app.close.assert_called_once()
 
 
-def test_scan_default_path_is_cwd():
-    """When no path is given, scan should use cwd."""
+def test_scan_default_path_is_vault_root(tmp_path):
+    """When no path is given, scan should use the vault root (sr_dir parent)."""
+    sr_dir = tmp_path / ".sr"
+    sr_dir.mkdir()
     with patch("sys.argv", ["sr", "scan"]):
         with patch("sr.cli.App") as MockApp:
             mock_app = MagicMock()
             MockApp.return_value = mock_app
-            mock_app.sr_dir = MagicMock()
-            mock_app.sr_dir.exists.return_value = True
+            mock_app.sr_dir = sr_dir
             mock_app.settings = {"scheduler": "sm2"}
             mock_app.scan_sources.return_value = []
             mock_app.sync_cards.return_value = {"new": 0, "updated": 0, "deleted": 0, "unchanged": 0}
@@ -56,7 +57,7 @@ def test_scan_default_path_is_cwd():
             main()
 
             scan_args = mock_app.scan_sources.call_args[0][0]
-            assert scan_args == [pathlib.Path.cwd()]
+            assert scan_args == [tmp_path]
 
 
 def test_status_no_db(capsys):

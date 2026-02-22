@@ -5,6 +5,8 @@ import pathlib
 import sys
 
 from sr.app import App
+from sr.config import (list_vaults, register_vault, set_active_vault,
+                       get_active_vault, _config_path)
 
 
 def cmd_scan(args, app: App):
@@ -21,7 +23,9 @@ def cmd_scan(args, app: App):
         for p in args.path:
             paths.append(pathlib.Path(p).resolve())
     else:
-        paths.append(pathlib.Path.cwd())
+        # Default: scan the vault root (parent of .sr directory)
+        vault_root = app.sr_dir.parent
+        paths.append(vault_root)
 
     print(f"Scanning {len(paths)} path(s)...")
     results = app.scan_sources(paths)
@@ -112,12 +116,59 @@ def cmd_launch(args, app: App):
     app.close()
 
 
+def cmd_init(args):
+    """Initialize a vault at a given directory (or cwd)."""
+    vault_path = pathlib.Path(args.dir or ".").resolve()
+    if not vault_path.exists():
+        print(f"Directory does not exist: {vault_path}")
+        sys.exit(1)
+    sr_dir = vault_path / ".sr"
+    if sr_dir.exists():
+        print(f"Vault already initialized at {vault_path}")
+    else:
+        sr_dir.mkdir(parents=True)
+        print(f"Initialized vault at {vault_path}")
+    set_active_vault(vault_path)
+    print(f"Active vault set to {vault_path}")
+
+
+def cmd_vault(args):
+    """Select the active vault from registered vaults."""
+    vaults = list_vaults()
+    active = get_active_vault()
+    if not vaults:
+        print("No vaults registered.")
+        print("Use 'sr init [dir]' to create one.")
+        return
+    print("Registered vaults:\n")
+    for i, v in enumerate(vaults):
+        marker = " *" if active and v.resolve() == active.resolve() else ""
+        print(f"  {i + 1}) {v}{marker}")
+    print()
+    try:
+        choice = input("Select vault (number): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if not choice.isdigit() or int(choice) < 1 or int(choice) > len(vaults):
+        print("Invalid selection.")
+        return
+    selected = vaults[int(choice) - 1]
+    set_active_vault(selected)
+    print(f"Active vault set to {selected}")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="sr", description="Spaced Repetition System")
     subparsers = parser.add_subparsers(dest="command")
 
+    p_init = subparsers.add_parser("init", help="Initialize a new vault")
+    p_init.add_argument("dir", nargs="?", help="Directory to initialize (default: current directory)")
+
+    subparsers.add_parser("vault", help="Select the active vault")
+
     p_scan = subparsers.add_parser("scan", help="Scan sources and sync cards to DB")
-    p_scan.add_argument("path", nargs="*", help="Paths to scan (default: cwd)")
+    p_scan.add_argument("path", nargs="*", help="Paths to scan (default: vault root)")
 
     subparsers.add_parser("status", help="Show card counts and stats")
 
@@ -129,10 +180,20 @@ def main():
         parser.print_help()
         sys.exit(1)
 
+    # Commands that don't need an existing vault
+    if args.command == "init":
+        cmd_init(args)
+        return
+    if args.command == "vault":
+        cmd_vault(args)
+        return
+
     app = App()
     if not app.sr_dir.exists():
         app.sr_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Created SR directory: {app.sr_dir}")
+        print(f"Created {app.sr_dir}")
+
+    print(f"vault: {app.vault}")
 
     if args.command == "scan":
         cmd_scan(args, app)

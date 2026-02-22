@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>sr</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
 <style>
 :root {
     --bg-primary: #191919;
@@ -30,6 +32,11 @@
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+:focus:not(:focus-visible) { outline: none; }
 body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     background: var(--bg-primary); color: var(--text-primary);
@@ -43,14 +50,46 @@ body {
 /* ── Nav ── */
 #nav {
     position: fixed; top: 0; left: 0; right: 0;
-    display: flex; align-items: center; gap: 0.25rem;
+    display: flex; align-items: center;
     padding: 0.5rem 1rem;
     background: var(--bg-secondary); border-bottom: 1px solid var(--border);
     z-index: 300; font-size: 0.8125rem;
 }
-#nav .nav-brand {
-    font-weight: 600; color: var(--text-primary); margin-right: 1rem;
-    font-size: 0.875rem; letter-spacing: -0.02em;
+.nav-left { flex: 1; display: flex; align-items: center; }
+.nav-center { display: flex; align-items: center; gap: 0.25rem; }
+.nav-right { flex: 1; }
+.vault-selector {
+    position: relative;
+}
+.vault-btn {
+    display: flex; align-items: center; gap: 0.35rem;
+    padding: 0.35rem 0.55rem; border: none; border-radius: 4px;
+    background: none; color: var(--text-primary); cursor: pointer;
+    font-size: 0.8125rem; font-family: inherit; font-weight: 500;
+    transition: background 120ms ease;
+}
+.vault-btn:hover { background: var(--bg-hover); }
+.vault-btn .vault-arrow { font-size: 0.5rem; color: var(--text-secondary); }
+.vault-dropdown {
+    display: none; position: absolute; top: 100%; left: 0;
+    margin-top: 0.25rem; min-width: 220px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 310; overflow: hidden;
+}
+.vault-dropdown.open { display: block; }
+.vault-dropdown .vault-item {
+    display: block; width: 100%; text-align: left;
+    padding: 0.45rem 0.75rem; font-size: 0.8125rem;
+    background: none; border: none; color: var(--text-secondary);
+    cursor: pointer; font-family: inherit;
+    transition: color 120ms ease, background 120ms ease;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.vault-dropdown .vault-item:hover { color: var(--text-primary); background: var(--bg-hover); }
+.vault-dropdown .vault-item.active { color: var(--accent); }
+.vault-dropdown .vault-sep {
+    border-top: 1px solid var(--border); margin: 0;
 }
 .nav-link {
     padding: 0.35rem 0.65rem; border: none; border-radius: 4px;
@@ -81,11 +120,6 @@ body {
 }
 
 /* ── Adapter: mnmd cloze styling ── */
-.cloze-blank {
-    display: inline-block; padding: 0.1em 0.5em;
-    border-bottom: 2px solid var(--accent); color: var(--accent);
-    font-weight: 400; min-width: 3em; text-align: center;
-}
 mark {
     background: var(--accent-muted); color: var(--accent);
     padding: 0.1em 0.35em; border-radius: 3px; font-weight: 500;
@@ -93,6 +127,16 @@ mark {
 pre {
     text-align: left; background: var(--bg-tertiary); padding: 1rem;
     border-radius: 4px; overflow-x: auto; margin: 0.5rem 0;
+}
+.katex-block {
+    display: block; text-align: center; margin: 0.75rem 0;
+}
+.katex-inline { }
+.katex { font-size: 1.1em; }
+.cloze-math { color: var(--accent); padding: 0 0.15em; }
+.cloze-math-answer {
+    background: var(--accent-muted); color: var(--accent);
+    padding: 0.1em 0.25em; border-radius: 3px;
 }
 code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em; }
 
@@ -170,162 +214,169 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
 }
 #view-decks .deck-row:hover .review-btn { opacity: 1; }
 #view-decks .review-btn:hover { background: var(--bg-hover); }
+@media (hover: none) { #view-decks .review-btn { opacity: 1; } }
 #view-decks .children { display: none; }
 #view-decks .children.open { display: block; }
 #view-decks #decks-loading { color: var(--text-secondary); font-size: 0.8125rem; }
 
 /* ════════════════════════════════════════════════════════════════
-   BROWSE VIEW
+   BROWSE VIEW — Three-panel layout
    ════════════════════════════════════════════════════════════════ */
-#view-browse .container {
-    max-width: 1000px; margin: 0 auto; padding: 3.5rem 2rem 2.5rem;
+#view-browse.active {
+    display: grid !important;
+    grid-template-columns: var(--browse-left, 200px) 4px 1fr 4px var(--browse-right, 320px);
+    position: fixed; top: 41px; left: 0; right: 0; bottom: 0;
 }
-#view-browse h1 {
-    font-weight: 300; font-size: 1.375rem; color: var(--text-primary);
-    margin-bottom: 1.5rem;
+.panel-resize {
+    background: transparent; cursor: col-resize; position: relative; z-index: 10;
+    transition: background 150ms ease;
 }
-#view-browse #browse-search-area {
-    display: flex; justify-content: center; margin-bottom: 1.5rem;
+.panel-resize::after {
+    content: ''; position: absolute; top: 0; bottom: 0;
+    left: -2px; right: -2px;
 }
-#view-browse #browse-search {
-    width: min(600px, 100%); padding: 0.75rem 1.25rem;
-    font-size: 1rem; font-family: inherit;
+.panel-resize:hover, .panel-resize.dragging { background: var(--accent); }
+
+/* ── Left: Filters panel ── */
+#browse-filters-panel {
+    background: var(--bg-secondary); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 0.75rem 0;
+}
+#browse-filters-panel .filter-group { margin-bottom: 0.75rem; }
+#browse-filters-panel .filter-group-label {
+    font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-tertiary); padding: 0.25rem 0.75rem 0.25rem;
+    font-weight: 500;
+}
+#browse-filters-panel .filter-item {
+    display: block; width: 100%; text-align: left;
+    padding: 0.3rem 0.75rem; font-size: 0.8125rem;
+    background: none; border: none; color: var(--text-secondary);
+    cursor: pointer; font-family: inherit;
+    transition: color 120ms ease, background 120ms ease;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#browse-filters-panel .filter-item:hover { color: var(--text-primary); background: var(--bg-hover); }
+#browse-filters-panel .filter-item.active { background: var(--accent-muted); color: var(--accent); }
+
+/* ── Center: Card list panel ── */
+#browse-center-panel {
+    display: flex; flex-direction: column; overflow: hidden;
+}
+#browse-center-header {
+    flex-shrink: 0; display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border);
+}
+#browse-center-header #browse-search {
+    flex: 1; padding: 0.4rem 0.65rem; font-size: 0.8125rem; font-family: inherit;
     background: var(--bg-secondary); color: var(--text-primary);
     border: 1px solid var(--border); border-radius: 4px;
     outline: none; transition: border-color 120ms ease;
 }
-#view-browse #browse-search::placeholder { color: var(--text-tertiary); }
-#view-browse #browse-search:focus { border-color: var(--border-hover); }
-#view-browse #browse-filters {
-    display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;
-    flex-wrap: wrap;
+#browse-center-header #browse-search::placeholder { color: var(--text-tertiary); }
+#browse-center-header #browse-search:focus { border-color: var(--border-hover); }
+#browse-center-header #browse-total-count {
+    font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap;
 }
-#view-browse #browse-status-tabs { display: flex; gap: 0; }
-#view-browse .status-tab {
-    padding: 0.4rem 0.75rem; font-size: 0.8125rem;
-    background: none; border: none; color: var(--text-secondary);
-    cursor: pointer; border-bottom: 2px solid transparent;
-    transition: color 120ms ease, border-color 120ms ease;
-    font-family: inherit;
+#browse-card-list {
+    flex: 1; overflow-y: auto;
 }
-#view-browse .status-tab:hover { color: var(--text-primary); }
-#view-browse .status-tab.active { color: var(--text-primary); border-bottom-color: var(--accent); }
-#view-browse .filter-select {
-    padding: 0.3rem 0.5rem; font-size: 0.8125rem;
-    background: var(--bg-secondary); color: var(--text-secondary);
-    border: 1px solid var(--border); border-radius: 4px;
-    font-family: inherit; cursor: pointer; outline: none;
-    transition: border-color 120ms ease; appearance: none;
-    padding-right: 1.5rem;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239b9b9b'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 0.5rem center;
-}
-#view-browse .filter-select:focus { border-color: var(--border-hover); }
-#view-browse .filter-select option { background: var(--bg-secondary); color: var(--text-primary); }
-#view-browse #browse-total-count {
-    margin-left: auto; font-size: 0.75rem; color: var(--text-secondary);
-}
-#view-browse #browse-card-list { margin-bottom: 1rem; }
 #view-browse .card-row {
-    display: flex; align-items: flex-start; gap: 1rem;
-    padding: 0.75rem 1.25rem;
+    display: flex; align-items: flex-start; gap: 0.5rem;
+    padding: 0.45rem 0.75rem;
     border-bottom: 1px solid var(--border);
     border-left: 3px solid transparent;
     cursor: pointer; transition: background 120ms ease;
+    user-select: none;
 }
 #view-browse .card-row:hover { background: var(--bg-hover); }
-#view-browse .card-row.status-active { border-left-color: var(--green); }
-#view-browse .card-row.status-inactive { border-left-color: var(--red); }
+#view-browse .card-row.selected { background: var(--bg-active); }
+#view-browse .card-row.focused { background: var(--accent-muted); border-left-color: var(--accent); }
+#view-browse .card-row.selected.focused { background: var(--accent-muted); border-left-color: var(--accent); }
 #view-browse .card-row-content { flex: 1; min-width: 0; }
 #view-browse .card-row-text {
-    color: var(--text-primary); font-size: 0.9rem;
+    color: var(--text-primary); font-size: 0.8125rem;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4;
 }
 #view-browse .card-row-source {
-    color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.15rem;
+    color: var(--text-secondary); font-size: 0.75rem; margin-top: 0.1rem;
 }
 #view-browse .card-row-pills {
-    display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center; flex-shrink: 0;
+    display: flex; gap: 0.2rem; flex-wrap: wrap; align-items: center; flex-shrink: 0;
 }
 #view-browse .pill-tag {
-    padding: 0.1rem 0.45rem; font-size: 0.6875rem; border-radius: 3px;
+    padding: 0.05rem 0.35rem; font-size: 0.625rem; border-radius: 3px;
     font-weight: 500; background: var(--green-bg); color: var(--green);
 }
 #view-browse .pill-flag {
-    padding: 0.1rem 0.45rem; font-size: 0.6875rem; border-radius: 3px;
+    padding: 0.05rem 0.35rem; font-size: 0.625rem; border-radius: 3px;
     font-weight: 500; background: var(--yellow-bg); color: var(--yellow);
 }
-#view-browse #browse-pagination {
-    display: flex; gap: 1rem; align-items: center; justify-content: center;
-    margin-top: 1rem; color: var(--text-secondary); font-size: 0.8125rem;
+#browse-center-footer {
+    flex-shrink: 0; display: flex; gap: 1rem; align-items: center; justify-content: center;
+    padding: 0.4rem 0.75rem; border-top: 1px solid var(--border);
+    color: var(--text-secondary); font-size: 0.8125rem;
 }
-#view-browse #browse-pagination button {
-    padding: 0.35rem 0.75rem; border: none; border-radius: 4px;
+#browse-center-footer button {
+    padding: 0.3rem 0.65rem; border: none; border-radius: 4px;
     background: transparent; color: var(--text-secondary);
     cursor: pointer; font-size: 0.8125rem; font-family: inherit;
     transition: background 120ms ease;
 }
-#view-browse #browse-pagination button:hover { background: var(--bg-hover); }
-#view-browse #browse-pagination button:disabled { opacity: 0.3; cursor: default; }
-#view-browse #browse-pagination button:disabled:hover { background: transparent; }
+#browse-center-footer button:hover { background: var(--bg-hover); }
+#browse-center-footer button:disabled { opacity: 0.3; cursor: default; }
+#browse-center-footer button:disabled:hover { background: transparent; }
 
-/* Detail overlay */
-#browse-detail-overlay {
-    position: fixed; inset: 0;
-    background: var(--bg-primary);
-    transform: translateX(100%);
-    transition: transform 250ms var(--ease-out);
-    z-index: 350;
-    display: flex; flex-direction: column;
+/* ── Right: Detail panel ── */
+#browse-detail-panel {
+    background: var(--bg-secondary); border-left: 1px solid var(--border);
+    overflow-y: auto; padding: 0.75rem;
 }
-#browse-detail-overlay.open { transform: translateX(0); }
-#browse-overlay-header {
-    flex-shrink: 0; display: flex; justify-content: flex-start;
-    padding: 1rem 1.5rem 0;
+#browse-detail-empty {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-tertiary); font-size: 0.8125rem;
 }
-#browse-overlay-close {
-    background: none; border: none; color: var(--text-secondary);
-    font-size: 1.5rem; cursor: pointer; padding: 0.5rem;
-    border-radius: 4px; line-height: 1; transition: background 120ms ease;
+#browse-detail-content { display: none; }
+#browse-bulk-summary { display: none; margin-top: 1rem; }
+#browse-bulk-summary .bulk-count {
+    font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 0.5rem;
 }
-#browse-overlay-close:hover { background: var(--bg-hover); }
-#browse-overlay-scroll { flex: 1; overflow-y: auto; }
-#browse-overlay-content { max-width: 640px; margin: 0 auto; padding: 1rem 2rem 3rem; }
-#view-browse .section { margin-bottom: 1.5rem; }
+#browse-bulk-summary .bulk-actions { display: flex; gap: 0.5rem; }
+#view-browse .section { margin-bottom: 1rem; }
 #view-browse .section-label {
-    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--text-secondary); margin-bottom: 0.5rem;
+    font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-secondary); margin-bottom: 0.35rem; font-weight: 500;
 }
 #view-browse .card-preview {
-    background: var(--bg-secondary); padding: 1.25rem; border-radius: 4px;
-    font-size: 0.95rem; line-height: 1.6; text-align: left;
+    background: var(--bg-primary); padding: 0.75rem; border-radius: 4px;
+    font-size: 0.8125rem; line-height: 1.5; text-align: left;
     cursor: pointer; transition: background 120ms ease;
-    border: 1px solid var(--border); height: 10rem; overflow-y: auto;
+    border: 1px solid var(--border); max-height: 10rem; overflow-y: auto;
 }
 #view-browse .card-preview:hover { background: var(--bg-hover); }
-#view-browse .card-preview pre { text-align: left; background: var(--bg-tertiary); padding: 0.8rem; border-radius: 4px; overflow-x: auto; }
+#view-browse .card-preview pre { text-align: left; background: var(--bg-tertiary); padding: 0.6rem; border-radius: 4px; overflow-x: auto; }
 #view-browse .card-preview code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em; }
 #view-browse .detail-row {
-    font-size: 0.875rem; color: var(--text-primary);
-    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    font-size: 0.8125rem; color: var(--text-primary);
+    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
 }
 #view-browse .detail-btn {
-    padding: 0.3rem 0.65rem; border: none; border-radius: 4px;
+    padding: 0.25rem 0.55rem; border: none; border-radius: 4px;
     background: transparent; color: var(--text-secondary);
-    cursor: pointer; font-size: 0.8125rem; font-family: inherit;
+    cursor: pointer; font-size: 0.75rem; font-family: inherit;
     transition: background 120ms ease;
 }
 #view-browse .detail-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 #view-browse .detail-btn.active-flag { color: var(--yellow); }
 #view-browse .detail-btn.active-tag { color: var(--green); }
 #view-browse .status-badge {
-    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px;
-    font-size: 0.75rem; font-weight: 500;
+    display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px;
+    font-size: 0.6875rem; font-weight: 500;
 }
 #view-browse .status-badge.active { background: var(--green-bg); color: var(--green); }
 #view-browse .status-badge.inactive { background: var(--red-bg); color: var(--red); }
 #view-browse .review-entry {
-    font-size: 0.8125rem; color: var(--text-secondary); padding: 0.25rem 0;
+    font-size: 0.75rem; color: var(--text-secondary); padding: 0.2rem 0;
 }
 #view-browse .review-entry .grade-mark { font-weight: 500; }
 #view-browse .review-entry .grade-correct { color: var(--green); }
@@ -359,13 +410,14 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
 }
 #review-menu-btn:hover { background: var(--bg-hover); }
 #review-palette {
-    display: none;
     position: fixed; top: 5.75rem; right: 1rem;
     background: var(--bg-secondary); border: 1px solid var(--border);
     border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
     z-index: 150; min-width: 180px; overflow: hidden;
+    opacity: 0; visibility: hidden; transform: translateY(-4px);
+    transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
 }
-#review-palette.open { display: block; }
+#review-palette.open { opacity: 1; visibility: visible; transform: translateY(0); }
 #view-review .palette-item {
     display: flex; align-items: center; gap: 0.75rem;
     padding: 0.5rem 0.875rem; cursor: pointer;
@@ -418,7 +470,7 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
     display: flex; gap: 0.75rem; justify-content: center;
     margin-bottom: 0.5rem;
     opacity: 0; visibility: hidden;
-    transition: opacity 150ms ease 100ms;
+    transition: opacity 150ms ease;
 }
 #review-controls.visible { opacity: 1; visibility: visible; }
 #view-review .grade-pill {
@@ -430,6 +482,7 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
 #view-review .grade-pill kbd {
     font-family: 'Inter', sans-serif; font-size: 0.6875rem; opacity: 0.5;
 }
+#view-review .grade-pill { transition: background 120ms ease, transform 80ms ease; }
 #view-review .grade-pill:active { transform: scale(0.97); }
 #review-btn-again { background: var(--red-bg); color: var(--red); }
 #review-btn-again:hover { background: rgba(190,82,75,0.2); }
@@ -493,9 +546,24 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
 <body>
 
 <nav id="nav">
-    <span class="nav-brand">sr</span>
-    <button class="nav-link" onclick="showView('decks')">Decks</button>
-    <button class="nav-link" onclick="showView('browse')">Browse</button>
+    <div class="nav-left">
+        <div class="vault-selector">
+            <button class="vault-btn" onclick="vaultSelector.toggle()">
+                <span id="vault-name">sr</span>
+                <span class="vault-arrow">&#9662;</span>
+            </button>
+            <div class="vault-dropdown" id="vault-dropdown">
+                <div id="vault-list"></div>
+                <div class="vault-sep"></div>
+                <button class="vault-item" onclick="vaultSelector.openFolder()">Open folder...</button>
+            </div>
+        </div>
+    </div>
+    <div class="nav-center">
+        <button class="nav-link" onclick="showView('decks')">Decks</button>
+        <button class="nav-link" onclick="showView('browse')">Browse</button>
+    </div>
+    <div class="nav-right"></div>
 </nav>
 
 <div id="toast"></div>
@@ -512,38 +580,52 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
 
 <!-- ════════ BROWSE VIEW ════════ -->
 <div id="view-browse" class="view">
-    <div class="container">
-        <h1>Cards</h1>
-        <div id="browse-search-area">
-            <input id="browse-search" type="text" placeholder="Search cards..." oninput="browseView.debounceSearch()">
+    <!-- Left: Filters -->
+    <div id="browse-filters-panel">
+        <div class="filter-group">
+            <div class="filter-group-label">Status</div>
+            <button class="filter-item active" data-filter="status" data-value="" onclick="browseView.toggleFilter(this)">All</button>
+            <button class="filter-item" data-filter="status" data-value="active" onclick="browseView.toggleFilter(this)">Active</button>
+            <button class="filter-item" data-filter="status" data-value="inactive" onclick="browseView.toggleFilter(this)">Suspended</button>
         </div>
-        <div id="browse-filters">
-            <div id="browse-status-tabs">
-                <button class="status-tab" data-status="" onclick="browseView.setStatus(this)">All</button>
-                <button class="status-tab active" data-status="active" onclick="browseView.setStatus(this)">Active</button>
-                <button class="status-tab" data-status="inactive" onclick="browseView.setStatus(this)">Suspended</button>
-            </div>
-            <select id="browse-filter-tag" class="filter-select" onchange="browseView.setTag()">
-                <option value="">All tags</option>
-            </select>
-            <select id="browse-filter-flag" class="filter-select" onchange="browseView.setFlag()">
-                <option value="">All flags</option>
-            </select>
+        <div class="filter-group">
+            <div class="filter-group-label">Tags</div>
+            <div id="browse-filter-tags-list"></div>
+        </div>
+        <div class="filter-group">
+            <div class="filter-group-label">Flags</div>
+            <div id="browse-filter-flags-list"></div>
+        </div>
+        <div class="filter-group">
+            <div class="filter-group-label">Sources</div>
+            <div id="browse-filter-paths-list"></div>
+        </div>
+    </div>
+    <div class="panel-resize" id="resize-left"></div>
+    <!-- Center: Card list -->
+    <div id="browse-center-panel">
+        <div id="browse-center-header">
+            <input id="browse-search" type="text" placeholder="Search cards..." oninput="browseView.debounceSearch()">
             <span id="browse-total-count"></span>
         </div>
         <div id="browse-card-list"></div>
-        <div id="browse-pagination">
+        <div id="browse-center-footer">
             <button id="browse-prev-btn" onclick="browseView.prevPage()" disabled>&larr; Prev</button>
             <span id="browse-page-info"></span>
             <button id="browse-next-btn" onclick="browseView.nextPage()" disabled>Next &rarr;</button>
         </div>
     </div>
-    <div id="browse-detail-overlay">
-        <div id="browse-overlay-header">
-            <button id="browse-overlay-close" onclick="browseView.closeDetail()">&times;</button>
-        </div>
-        <div id="browse-overlay-scroll">
-            <div id="browse-overlay-content"></div>
+    <div class="panel-resize" id="resize-right"></div>
+    <!-- Right: Detail -->
+    <div id="browse-detail-panel">
+        <div id="browse-detail-empty">Select a card</div>
+        <div id="browse-detail-content"></div>
+        <div id="browse-bulk-summary">
+            <div class="bulk-count" id="browse-bulk-count"></div>
+            <div class="bulk-actions">
+                <button class="detail-btn" onclick="browseView.bulkSetStatus('inactive')">Suspend</button>
+                <button class="detail-btn" onclick="browseView.bulkSetStatus('active')">Activate</button>
+            </div>
         </div>
     </div>
 </div>
@@ -555,9 +637,11 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
     <button id="review-menu-btn" onclick="reviewView.togglePalette()">···</button>
     <div id="review-palette">
         <div class="palette-item" onclick="reviewView.toggleFlag()">Flag<kbd>f</kbd></div>
+        <div class="palette-item" onclick="reviewView.skipCard()">Skip<kbd>k</kbd></div>
         <div class="palette-item" onclick="reviewView.editCard()">Edit source<kbd>e</kbd></div>
         <div class="palette-item" onclick="reviewView.suspendCard()">Suspend<kbd>s</kbd></div>
         <div class="palette-item" onclick="reviewView.undo()">Undo<kbd>z</kbd></div>
+        <div class="palette-item" onclick="showView('decks')" style="border-top:1px solid var(--border);">Back to decks<kbd>q</kbd></div>
     </div>
     <main id="review-stage">
         <div id="review-card-content">Loading...</div>
@@ -565,17 +649,17 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
     </main>
     <div id="review-bottom-bar">
         <div id="review-autograde-result"></div>
-        <div id="review-controls">
-            <button class="grade-pill" id="review-btn-again" onclick="reviewView.grade(0)">Again<kbd>1</kbd></button>
-            <button class="grade-pill" id="review-btn-good" onclick="reviewView.grade(1)">Good<kbd>2</kbd></button>
-            <button id="review-btn-next" onclick="reviewView.submitAutoGrade()">Next</button>
-        </div>
         <div id="review-feedback-row">
             <button class="fb-btn" data-fb="too_hard" onclick="reviewView.setFeedback('too_hard')">too hard</button>
             <span class="fb-sep">&middot;</span>
             <button class="fb-btn" data-fb="just_right" onclick="reviewView.setFeedback('just_right')">just right</button>
             <span class="fb-sep">&middot;</span>
             <button class="fb-btn" data-fb="too_easy" onclick="reviewView.setFeedback('too_easy')">too easy</button>
+        </div>
+        <div id="review-controls">
+            <button class="grade-pill" id="review-btn-again" onclick="reviewView.grade(0)">Again<kbd>1</kbd></button>
+            <button class="grade-pill" id="review-btn-good" onclick="reviewView.grade(1)">Good<kbd>2</kbd></button>
+            <button id="review-btn-next" onclick="reviewView.submitAutoGrade()">Next</button>
         </div>
     </div>
     <div id="review-done-screen">
@@ -590,6 +674,16 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
 /* ── Shared helpers ── */
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
+function renderMath(el) {
+    if (typeof katex === "undefined") return;
+    el.querySelectorAll(".katex-block, .katex-inline").forEach(span => {
+        const displayMode = span.classList.contains("katex-block");
+        try {
+            katex.render(span.textContent, span, { displayMode, throwOnError: false, trust: true });
+        } catch(e) { /* leave raw LaTeX visible */ }
+    });
+}
+
 async function api(method, path, body, token) {
     const opts = {method, headers: {"Content-Type": "application/json"}};
     if (token) opts.headers["X-Session-Token"] = token;
@@ -597,7 +691,8 @@ async function api(method, path, body, token) {
     const r = await fetch(path, opts);
     if (!r.ok) {
         const t = await r.text();
-        throw new Error(t);
+        try { const j = JSON.parse(t); throw new Error(j.error || t); }
+        catch(pe) { if (pe instanceof SyntaxError) throw new Error(t); throw pe; }
     }
     return r.json();
 }
@@ -635,19 +730,19 @@ const decksView = {
     loaded: false,
 
     init() {
-        if (!this.loaded) this.loadTree();
+        this.loadTree();
     },
 
     countTree(nodes) {
-        let cards = 0, due = 0, sources = 0;
+        let cards = 0, newCount = 0, reviewCount = 0, sources = 0;
         nodes.forEach(n => {
-            if (n.is_leaf) { cards += n.active; due += n.due; sources++; }
+            if (n.is_leaf) { cards += n.active; newCount += n.new; reviewCount += n.review; sources++; }
             else if (n.children) {
                 const sub = this.countTree(n.children);
-                cards += sub.cards; due += sub.due; sources += sub.sources;
+                cards += sub.cards; newCount += sub.newCount; reviewCount += sub.reviewCount; sources += sub.sources;
             }
         });
-        return { cards, due, sources };
+        return { cards, newCount, reviewCount, sources };
     },
 
     async loadTree() {
@@ -656,10 +751,16 @@ const decksView = {
             document.getElementById("decks-loading").style.display = "none";
             const totals = this.countTree(tree);
             const summaryEl = document.getElementById("decks-summary");
+            const due = totals.newCount + totals.reviewCount;
             let text = totals.cards + " cards across " + totals.sources + " sources";
-            if (totals.due > 0) text += " \u00b7 " + totals.due + " due";
+            if (due > 0) {
+                const parts = [];
+                if (totals.newCount > 0) parts.push(totals.newCount + " new");
+                if (totals.reviewCount > 0) parts.push(totals.reviewCount + " review");
+                text += " \u00b7 " + parts.join(", ");
+            }
             summaryEl.innerHTML = "<span>" + text + "</span>";
-            if (totals.due > 0) {
+            if (due > 0) {
                 summaryEl.innerHTML += '<button class="review-all-btn" onclick="decksView.startReview(\'\')">Review all due</button>';
             }
             const root = document.getElementById("decks-tree-root");
@@ -708,13 +809,17 @@ const decksView = {
             track.className = "progress-track";
             const fill = document.createElement("div");
             fill.className = "progress-fill";
-            const reviewed = node.active > 0 ? Math.max(0, node.active - node.due) : 0;
+            const nodeDue = (node.new || 0) + (node.review || 0);
+            const reviewed = node.active > 0 ? Math.max(0, node.active - nodeDue) : 0;
             const pct = node.active > 0 ? (reviewed / node.active * 100) : 100;
             fill.style.width = pct + "%";
             track.appendChild(fill);
             const dueEl = document.createElement("span");
-            dueEl.className = "due-count " + (node.due > 0 ? "has-due" : "no-due");
-            dueEl.textContent = node.due + " due";
+            dueEl.className = "due-count " + (nodeDue > 0 ? "has-due" : "no-due");
+            const dueParts = [];
+            if (node.new > 0) dueParts.push(node.new + " new");
+            if (node.review > 0) dueParts.push(node.review + " review");
+            dueEl.textContent = dueParts.length > 0 ? dueParts.join(", ") : "0 due";
             progress.appendChild(track);
             progress.appendChild(dueEl);
             const btn = document.createElement("button");
@@ -769,9 +874,14 @@ const browseView = {
     limit: 50,
     totalCards: 0,
     searchTimeout: null,
-    currentStatus: "active",
+    currentStatus: "",
     currentTag: "",
     currentFlag: "",
+    currentPath: "",
+    selectedIds: new Set(),
+    focusedId: null,
+    lastClickedId: null,
+    cardIdsInOrder: [],
     previewState: { front: "", back: "", side: "front" },
     filtersLoaded: false,
 
@@ -782,36 +892,73 @@ const browseView = {
 
     async loadFilters() {
         try {
-            const [tags, flags] = await Promise.all([
+            const [tags, flags, paths] = await Promise.all([
                 api("GET", "/api/browse/tags"),
-                api("GET", "/api/browse/flags")
+                api("GET", "/api/browse/flags"),
+                api("GET", "/api/browse/paths")
             ]);
-            const tagSel = document.getElementById("browse-filter-tag");
-            tagSel.innerHTML = '<option value="">All tags</option>';
-            tags.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; tagSel.appendChild(o); });
-            const flagSel = document.getElementById("browse-filter-flag");
-            flagSel.innerHTML = '<option value="">All flags</option>';
-            flags.forEach(f => { const o = document.createElement("option"); o.value = f; o.textContent = f; flagSel.appendChild(o); });
+            const tagsList = document.getElementById("browse-filter-tags-list");
+            tagsList.innerHTML = "";
+            tags.forEach(t => {
+                const btn = document.createElement("button");
+                btn.className = "filter-item";
+                btn.dataset.filter = "tag";
+                btn.dataset.value = t;
+                btn.textContent = t;
+                btn.onclick = () => this.toggleFilter(btn);
+                tagsList.appendChild(btn);
+            });
+            const flagsList = document.getElementById("browse-filter-flags-list");
+            flagsList.innerHTML = "";
+            flags.forEach(f => {
+                const btn = document.createElement("button");
+                btn.className = "filter-item";
+                btn.dataset.filter = "flag";
+                btn.dataset.value = f;
+                btn.textContent = f;
+                btn.onclick = () => this.toggleFilter(btn);
+                flagsList.appendChild(btn);
+            });
+            const pathsList = document.getElementById("browse-filter-paths-list");
+            pathsList.innerHTML = "";
+            paths.forEach(p => {
+                const btn = document.createElement("button");
+                btn.className = "filter-item";
+                btn.dataset.filter = "path";
+                btn.dataset.value = p;
+                btn.textContent = p.split("/").pop();
+                btn.title = p;
+                btn.onclick = () => this.toggleFilter(btn);
+                pathsList.appendChild(btn);
+            });
             this.filtersLoaded = true;
         } catch(e) { console.error(e); }
     },
 
-    setStatus(el) {
-        document.querySelectorAll("#view-browse .status-tab").forEach(t => t.classList.remove("active"));
-        el.classList.add("active");
-        this.currentStatus = el.dataset.status;
-        this.offset = 0;
-        this.fetchCards();
-    },
-
-    setTag() {
-        this.currentTag = document.getElementById("browse-filter-tag").value;
-        this.offset = 0;
-        this.fetchCards();
-    },
-
-    setFlag() {
-        this.currentFlag = document.getElementById("browse-filter-flag").value;
+    toggleFilter(el) {
+        const filterType = el.dataset.filter;
+        const value = el.dataset.value;
+        if (filterType === "status") {
+            // Radio: only one active at a time
+            document.querySelectorAll('#browse-filters-panel .filter-item[data-filter="status"]').forEach(b => b.classList.remove("active"));
+            el.classList.add("active");
+            this.currentStatus = value;
+        } else {
+            // Toggle: click again to deselect
+            const wasActive = el.classList.contains("active");
+            // Deselect siblings in same filter type
+            document.querySelectorAll('#browse-filters-panel .filter-item[data-filter="' + filterType + '"]').forEach(b => b.classList.remove("active"));
+            if (!wasActive) {
+                el.classList.add("active");
+                if (filterType === "tag") this.currentTag = value;
+                else if (filterType === "flag") this.currentFlag = value;
+                else if (filterType === "path") this.currentPath = value;
+            } else {
+                if (filterType === "tag") this.currentTag = "";
+                else if (filterType === "flag") this.currentFlag = "";
+                else if (filterType === "path") this.currentPath = "";
+            }
+        }
         this.offset = 0;
         this.fetchCards();
     },
@@ -826,6 +973,7 @@ const browseView = {
         if (this.currentStatus) params.set("status", this.currentStatus);
         if (this.currentTag) params.set("tag", this.currentTag);
         if (this.currentFlag) params.set("flag", this.currentFlag);
+        if (this.currentPath) params.set("path", this.currentPath);
         const q = document.getElementById("browse-search").value;
         if (q) params.set("q", q);
         params.set("offset", this.offset);
@@ -842,10 +990,14 @@ const browseView = {
     renderCards(cards) {
         const list = document.getElementById("browse-card-list");
         list.innerHTML = "";
+        this.cardIdsInOrder = cards.map(c => c.id);
         cards.forEach(c => {
             const row = document.createElement("div");
-            row.className = "card-row status-" + c.status;
-            row.onclick = () => this.showDetail(c.id);
+            row.className = "card-row";
+            if (this.selectedIds.has(c.id)) row.classList.add("selected");
+            if (this.focusedId === c.id) row.classList.add("focused");
+            row.dataset.cardId = c.id;
+            row.addEventListener("click", (e) => this.handleRowClick(c.id, e));
             const content = document.createElement("div");
             content.className = "card-row-content";
             const text = document.createElement("div");
@@ -872,26 +1024,80 @@ const browseView = {
             row.appendChild(pills);
             list.appendChild(row);
         });
+        this.updateRightPanel();
     },
 
-    updatePagination() {
-        const maxPage = Math.max(1, Math.ceil(this.totalCards / this.limit));
-        const curPage = Math.floor(this.offset / this.limit) + 1;
-        document.getElementById("browse-page-info").textContent = "Page " + curPage + " of " + maxPage;
-        document.getElementById("browse-prev-btn").disabled = this.offset === 0;
-        document.getElementById("browse-next-btn").disabled = this.offset + this.limit >= this.totalCards;
+    handleRowClick(id, e) {
+        if (e.shiftKey && this.lastClickedId !== null) {
+            // Range select
+            const startIdx = this.cardIdsInOrder.indexOf(this.lastClickedId);
+            const endIdx = this.cardIdsInOrder.indexOf(id);
+            if (startIdx !== -1 && endIdx !== -1) {
+                const lo = Math.min(startIdx, endIdx);
+                const hi = Math.max(startIdx, endIdx);
+                if (!e.ctrlKey && !e.metaKey) this.selectedIds.clear();
+                for (let i = lo; i <= hi; i++) this.selectedIds.add(this.cardIdsInOrder[i]);
+            }
+            this.focusedId = id;
+        } else if (e.ctrlKey || e.metaKey) {
+            // Toggle single in multi-select
+            if (this.selectedIds.has(id)) this.selectedIds.delete(id);
+            else this.selectedIds.add(id);
+            this.focusedId = id;
+            this.lastClickedId = id;
+        } else {
+            // Plain click: single select
+            this.selectedIds.clear();
+            this.selectedIds.add(id);
+            this.focusedId = id;
+            this.lastClickedId = id;
+        }
+        this.applyRowStyles();
+        this.updateRightPanel();
     },
 
-    prevPage() { this.offset = Math.max(0, this.offset - this.limit); this.fetchCards(); },
-    nextPage() { this.offset += this.limit; this.fetchCards(); },
+    applyRowStyles() {
+        document.querySelectorAll("#browse-card-list .card-row").forEach(row => {
+            const rid = Number(row.dataset.cardId);
+            row.classList.toggle("selected", this.selectedIds.has(rid));
+            row.classList.toggle("focused", this.focusedId === rid);
+        });
+    },
+
+    updateRightPanel() {
+        const empty = document.getElementById("browse-detail-empty");
+        const content = document.getElementById("browse-detail-content");
+        const bulk = document.getElementById("browse-bulk-summary");
+        if (this.selectedIds.size === 0 && this.focusedId === null) {
+            empty.style.display = "flex";
+            content.style.display = "none";
+            bulk.style.display = "none";
+        } else {
+            empty.style.display = "none";
+            if (this.focusedId !== null) {
+                content.style.display = "block";
+                this.loadDetail(this.focusedId);
+            } else {
+                content.style.display = "none";
+            }
+            if (this.selectedIds.size > 1) {
+                bulk.style.display = "block";
+                document.getElementById("browse-bulk-count").textContent = this.selectedIds.size + " cards selected";
+            } else {
+                bulk.style.display = "none";
+            }
+        }
+    },
 
     flipPreview() {
         this.previewState.side = this.previewState.side === "front" ? "back" : "front";
-        document.getElementById("browse-card-preview").innerHTML = this.previewState[this.previewState.side];
+        const prev = document.getElementById("browse-card-preview");
+        prev.innerHTML = this.previewState[this.previewState.side];
+        renderMath(prev);
         document.getElementById("browse-preview-label").textContent = this.previewState.side === "front" ? "Front" : "Back";
     },
 
-    async showDetail(cardId) {
+    async loadDetail(cardId) {
         try {
             const c = await api("GET", "/api/browse/cards/" + cardId);
             this.previewState = {
@@ -899,77 +1105,146 @@ const browseView = {
                 back: c.back_html || "",
                 side: "front"
             };
-            const statusCls = c.status === "active" ? "active" : "inactive";
-            const toggleLabel = c.status === "active" ? "Suspend" : "Activate";
-            const flagBtns = (c.flags || []).map(f =>
-                '<button class="detail-btn active-flag" onclick="browseView.removeFlag(' + c.id + ",'" + esc(f.flag) + "')" + '">' + esc(f.flag) + " &times;</button>"
-            ).join("");
-            const tagBtns = (c.tags || []).map(t =>
-                '<button class="detail-btn active-tag" onclick="browseView.removeTag(' + c.id + ",'" + esc(t) + "')" + '">' + esc(t) + " &times;</button>"
-            ).join("");
-            const reviews = (c.reviews || []).map(r => {
-                const gradeCls = r.grade === 1 ? "grade-correct" : "grade-wrong";
-                const gradeMark = r.grade === 1 ? "correct" : "again";
-                const fb = r.feedback ? " (" + r.feedback + ")" : "";
-                return '<div class="review-entry">' + r.timestamp + ' &mdash; <span class="grade-mark ' + gradeCls + '">' + gradeMark + "</span>" + fb + "</div>";
-            }).join("");
+            const container = document.getElementById("browse-detail-content");
+            container.innerHTML = "";
 
-            document.getElementById("browse-overlay-content").innerHTML =
-                '<div class="section">' +
-                    '<div class="section-label" style="display:flex;justify-content:space-between;align-items:center;">' +
-                        '<span id="browse-preview-label">Front</span>' +
-                        '<span style="font-size:0.6875rem;color:var(--text-tertiary);">click to flip</span>' +
-                    '</div>' +
-                    '<div class="card-preview" id="browse-card-preview" onclick="browseView.flipPreview()">' +
-                        (c.front_html || esc(c.display_text || "")) +
-                    '</div>' +
-                '</div>' +
-                '<div class="section">' +
-                    '<div class="section-label">Source</div>' +
-                    '<div class="detail-row">' +
-                        '<span>' + esc(c.source_path) + '</span>' +
-                        '<button class="detail-btn" onclick="browseView.editCard(' + c.id + ')">Edit</button>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="section">' +
-                    '<div class="section-label">Status</div>' +
-                    '<div class="detail-row">' +
-                        '<span class="status-badge ' + statusCls + '">' + c.status + '</span>' +
-                        '<button class="detail-btn" onclick="browseView.toggleStatus(' + c.id + ",'" + c.status + "')" + '">' + toggleLabel + '</button>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="section">' +
-                    '<div class="section-label">Tags</div>' +
-                    '<div class="detail-row">' +
-                        tagBtns +
-                        '<button class="detail-btn" onclick="browseView.promptAddTag(' + c.id + ')">+ Add</button>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="section">' +
-                    '<div class="section-label">Flags</div>' +
-                    '<div class="detail-row">' +
-                        flagBtns +
-                        '<button class="detail-btn" onclick="browseView.promptAddFlag(' + c.id + ')">+ Add</button>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="section">' +
-                    '<div class="section-label">Review History</div>' +
-                    (reviews || '<div style="font-size:0.8125rem;color:var(--text-tertiary);">No reviews yet.</div>') +
-                '</div>';
-            document.getElementById("browse-overlay-scroll").scrollTop = 0;
-            document.getElementById("browse-detail-overlay").classList.add("open");
+            // Preview section
+            const previewSec = this._makeSection(null);
+            const previewLabel = document.createElement("div");
+            previewLabel.className = "section-label";
+            previewLabel.style.cssText = "display:flex;justify-content:space-between;align-items:center;";
+            previewLabel.innerHTML = '<span id="browse-preview-label">Front</span><span style="font-size:0.5625rem;color:var(--text-tertiary);">click to flip</span>';
+            previewSec.appendChild(previewLabel);
+            const preview = document.createElement("div");
+            preview.className = "card-preview";
+            preview.id = "browse-card-preview";
+            preview.innerHTML = c.front_html || esc(c.display_text || "");
+            renderMath(preview);
+            preview.addEventListener("click", () => this.flipPreview());
+            previewSec.appendChild(preview);
+            container.appendChild(previewSec);
+
+            // Source section
+            const srcSec = this._makeSection("Source");
+            const srcRow = document.createElement("div");
+            srcRow.className = "detail-row";
+            const srcSpan = document.createElement("span");
+            srcSpan.textContent = c.source_path;
+            srcRow.appendChild(srcSpan);
+            const editBtn = document.createElement("button");
+            editBtn.className = "detail-btn";
+            editBtn.textContent = "Edit";
+            editBtn.addEventListener("click", () => this.editCard(c.id));
+            srcRow.appendChild(editBtn);
+            srcSec.appendChild(srcRow);
+            container.appendChild(srcSec);
+
+            // Status section
+            const statusSec = this._makeSection("Status");
+            const statusRow = document.createElement("div");
+            statusRow.className = "detail-row";
+            const badge = document.createElement("span");
+            badge.className = "status-badge " + (c.status === "active" ? "active" : "inactive");
+            badge.textContent = c.status;
+            statusRow.appendChild(badge);
+            const toggleBtn = document.createElement("button");
+            toggleBtn.className = "detail-btn";
+            toggleBtn.textContent = c.status === "active" ? "Suspend" : "Activate";
+            toggleBtn.addEventListener("click", () => this.toggleStatus(c.id, c.status));
+            statusRow.appendChild(toggleBtn);
+            statusSec.appendChild(statusRow);
+            container.appendChild(statusSec);
+
+            // Tags section
+            const tagsSec = this._makeSection("Tags");
+            const tagsRow = document.createElement("div");
+            tagsRow.className = "detail-row";
+            (c.tags || []).forEach(t => {
+                const btn = document.createElement("button");
+                btn.className = "detail-btn active-tag";
+                btn.textContent = t + " \u00d7";
+                btn.addEventListener("click", () => this.removeTag(c.id, t));
+                tagsRow.appendChild(btn);
+            });
+            const addTagBtn = document.createElement("button");
+            addTagBtn.className = "detail-btn";
+            addTagBtn.textContent = "+ Add";
+            addTagBtn.addEventListener("click", () => this.promptAddTag(c.id));
+            tagsRow.appendChild(addTagBtn);
+            tagsSec.appendChild(tagsRow);
+            container.appendChild(tagsSec);
+
+            // Flags section
+            const flagsSec = this._makeSection("Flags");
+            const flagsRow = document.createElement("div");
+            flagsRow.className = "detail-row";
+            (c.flags || []).forEach(f => {
+                const btn = document.createElement("button");
+                btn.className = "detail-btn active-flag";
+                btn.textContent = f.flag + " \u00d7";
+                btn.addEventListener("click", () => this.removeFlag(c.id, f.flag));
+                flagsRow.appendChild(btn);
+            });
+            const addFlagBtn = document.createElement("button");
+            addFlagBtn.className = "detail-btn";
+            addFlagBtn.textContent = "+ Add";
+            addFlagBtn.addEventListener("click", () => this.promptAddFlag(c.id));
+            flagsRow.appendChild(addFlagBtn);
+            flagsSec.appendChild(flagsRow);
+            container.appendChild(flagsSec);
+
+            // Review history section
+            const histSec = this._makeSection("Review History");
+            if (c.reviews && c.reviews.length > 0) {
+                c.reviews.forEach(r => {
+                    const entry = document.createElement("div");
+                    entry.className = "review-entry";
+                    const gradeCls = r.grade === 1 ? "grade-correct" : "grade-wrong";
+                    const gradeMark = r.grade === 1 ? "correct" : "again";
+                    const fb = r.feedback ? " (" + esc(r.feedback) + ")" : "";
+                    entry.innerHTML = esc(r.timestamp) + ' &mdash; <span class="grade-mark ' + gradeCls + '">' + gradeMark + "</span>" + fb;
+                    histSec.appendChild(entry);
+                });
+            } else {
+                const noReviews = document.createElement("div");
+                noReviews.style.cssText = "font-size:0.75rem;color:var(--text-tertiary);";
+                noReviews.textContent = "No reviews yet.";
+                histSec.appendChild(noReviews);
+            }
+            container.appendChild(histSec);
+
+            document.getElementById("browse-detail-panel").scrollTop = 0;
         } catch(e) { console.error(e); }
     },
 
-    closeDetail() {
-        document.getElementById("browse-detail-overlay").classList.remove("open");
+    _makeSection(label) {
+        const sec = document.createElement("div");
+        sec.className = "section";
+        if (label) {
+            const lbl = document.createElement("div");
+            lbl.className = "section-label";
+            lbl.textContent = label;
+            sec.appendChild(lbl);
+        }
+        return sec;
     },
+
+    updatePagination() {
+        const maxPage = Math.max(1, Math.ceil(this.totalCards / this.limit));
+        const curPage = Math.floor(this.offset / this.limit) + 1;
+        document.getElementById("browse-page-info").textContent = curPage + " / " + maxPage;
+        document.getElementById("browse-prev-btn").disabled = this.offset === 0;
+        document.getElementById("browse-next-btn").disabled = this.offset + this.limit >= this.totalCards;
+    },
+
+    prevPage() { this.offset = Math.max(0, this.offset - this.limit); this.fetchCards(); },
+    nextPage() { this.offset += this.limit; this.fetchCards(); },
 
     async toggleStatus(cardId, current) {
         const newStatus = current === "active" ? "inactive" : "active";
         try {
             await api("POST", "/api/browse/cards/" + cardId + "/status", {status: newStatus});
-            this.showDetail(cardId);
+            this.loadDetail(cardId);
             this.fetchCards();
         } catch(e) { console.error(e); }
     },
@@ -977,7 +1252,7 @@ const browseView = {
     async removeFlag(cardId, flag) {
         try {
             await api("POST", "/api/browse/cards/" + cardId + "/unflag", {flag: flag});
-            this.showDetail(cardId);
+            this.loadDetail(cardId);
             this.fetchCards();
         } catch(e) { console.error(e); }
     },
@@ -985,7 +1260,7 @@ const browseView = {
     async removeTag(cardId, tag) {
         try {
             await api("POST", "/api/browse/cards/" + cardId + "/untag", {tag: tag});
-            this.showDetail(cardId);
+            this.loadDetail(cardId);
             this.fetchCards();
         } catch(e) { console.error(e); }
     },
@@ -995,7 +1270,7 @@ const browseView = {
         if (!tag) return;
         try {
             await api("POST", "/api/browse/cards/" + cardId + "/tag", {tag: tag});
-            this.showDetail(cardId);
+            this.loadDetail(cardId);
             this.fetchCards();
         } catch(e) { console.error(e); }
     },
@@ -1012,11 +1287,91 @@ const browseView = {
         const note = prompt("Note (optional):");
         try {
             await api("POST", "/api/browse/cards/" + cardId + "/flag", {flag: flag, note: note || null});
-            this.showDetail(cardId);
+            this.loadDetail(cardId);
+            this.fetchCards();
+        } catch(e) { console.error(e); }
+    },
+
+    selectAllVisible() {
+        const allSelected = this.cardIdsInOrder.every(id => this.selectedIds.has(id));
+        if (allSelected) {
+            this.selectedIds.clear();
+            this.focusedId = null;
+        } else {
+            this.cardIdsInOrder.forEach(id => this.selectedIds.add(id));
+        }
+        this.applyRowStyles();
+        this.updateRightPanel();
+    },
+
+    deselectAll() {
+        this.selectedIds.clear();
+        this.focusedId = null;
+        this.lastClickedId = null;
+        this.applyRowStyles();
+        this.updateRightPanel();
+    },
+
+    moveFocus(delta) {
+        if (this.cardIdsInOrder.length === 0) return;
+        let idx = this.focusedId !== null ? this.cardIdsInOrder.indexOf(this.focusedId) : -1;
+        idx += delta;
+        if (idx < 0) idx = 0;
+        if (idx >= this.cardIdsInOrder.length) idx = this.cardIdsInOrder.length - 1;
+        const newId = this.cardIdsInOrder[idx];
+        this.selectedIds.clear();
+        this.selectedIds.add(newId);
+        this.focusedId = newId;
+        this.lastClickedId = newId;
+        this.applyRowStyles();
+        this.updateRightPanel();
+        // Scroll focused row into view
+        const row = document.querySelector('#browse-card-list .card-row[data-card-id="' + newId + '"]');
+        if (row) row.scrollIntoView({ block: "nearest" });
+    },
+
+    async bulkSetStatus(status) {
+        if (this.selectedIds.size === 0) return;
+        try {
+            await api("POST", "/api/browse/bulk/status", {card_ids: [...this.selectedIds], status: status});
+            showToast(this.selectedIds.size + " cards " + (status === "inactive" ? "suspended" : "activated"));
+            this.selectedIds.clear();
+            this.focusedId = null;
             this.fetchCards();
         } catch(e) { console.error(e); }
     }
 };
+
+/* ── Panel resize ── */
+(function() {
+    const browse = document.getElementById("view-browse");
+    function initResize(handleId, side) {
+        const handle = document.getElementById(handleId);
+        let startX, startW;
+        handle.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            handle.classList.add("dragging");
+            startX = e.clientX;
+            const cs = getComputedStyle(browse);
+            const cols = cs.gridTemplateColumns.split(/\s+/);
+            startW = side === "left" ? parseFloat(cols[0]) : parseFloat(cols[cols.length - 1]);
+            const onMove = (e) => {
+                const dx = e.clientX - startX;
+                const newW = Math.max(120, side === "left" ? startW + dx : startW - dx);
+                browse.style.setProperty("--browse-" + side, newW + "px");
+            };
+            const onUp = () => {
+                handle.classList.remove("dragging");
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+            };
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onUp);
+        });
+    }
+    initResize("resize-left", "left");
+    initResize("resize-right", "right");
+})();
 
 /* ════════════════════════════════════════════════════════════════
    REVIEW VIEW
@@ -1028,9 +1383,14 @@ const reviewView = {
     hasCard: false,
     currentGradable: true,
     autoGradeResult: null,
+    isActing: false,
     currentFlags: [],
     statsReviewed: 0,
+    statsSkipped: 0,
+    statsSuspended: 0,
+    statsExcluded: 0,
     statsRemaining: 0,
+    statsInitialTotal: 0,
 
     start(token) {
         this.sessionToken = token;
@@ -1040,6 +1400,9 @@ const reviewView = {
         this.currentFeedback = null;
         this.currentFlags = [];
         this.statsReviewed = 0;
+        this.statsSkipped = 0;
+        this.statsSuspended = 0;
+        this.statsExcluded = 0;
         this.statsRemaining = 0;
         showView("review");
         // Force nav hide since showView sets it
@@ -1047,9 +1410,20 @@ const reviewView = {
         this.loadNext();
     },
 
+    applyStats(stats) {
+        this.statsReviewed = stats.reviewed;
+        this.statsSkipped = stats.skipped || 0;
+        this.statsSuspended = stats.suspended || 0;
+        this.statsExcluded = stats.excluded || 0;
+        this.statsRemaining = stats.remaining;
+        if (stats.initial_total !== undefined) this.statsInitialTotal = stats.initial_total;
+    },
+
     updateProgressBar() {
-        const total = this.statsReviewed + this.statsRemaining;
-        const pct = total > 0 ? (this.statsReviewed / total * 100) : 0;
+        const done = this.statsReviewed + this.statsSkipped + this.statsSuspended + this.statsExcluded;
+        // Use snapshotted initial total so the bar never goes backwards
+        const total = Math.max(this.statsInitialTotal, done + this.statsRemaining);
+        const pct = total > 0 ? (done / total * 100) : 0;
         document.getElementById("review-progress-bar").style.width = pct + "%";
     },
 
@@ -1064,7 +1438,9 @@ const reviewView = {
     hideControls() {
         document.getElementById("review-controls").classList.remove("visible");
         document.getElementById("review-feedback-row").classList.remove("visible");
-        document.getElementById("review-autograde-result").classList.remove("visible");
+        const ag = document.getElementById("review-autograde-result");
+        ag.classList.remove("visible");
+        ag.textContent = "";
     },
 
     updateFlagIndicator() {
@@ -1093,7 +1469,7 @@ const reviewView = {
         try {
             const data = await api("GET", "/api/review/next", null, this.sessionToken);
             if (data.done) {
-                this.statsReviewed = data.session_stats.reviewed;
+                this.applyStats(data.session_stats);
                 this.statsRemaining = 0;
                 this.updateProgressBar();
                 document.getElementById("review-progress-bar").classList.add("complete");
@@ -1101,18 +1477,25 @@ const reviewView = {
                 document.getElementById("review-menu-btn").style.display = "none";
                 this.hideControls();
                 document.getElementById("review-done-screen").style.display = "flex";
-                document.getElementById("review-done-count").textContent = this.statsReviewed + " cards reviewed";
+                const doneParts = [];
+                if (this.statsReviewed > 0) doneParts.push(this.statsReviewed + " reviewed");
+                if (this.statsSkipped > 0) doneParts.push(this.statsSkipped + " skipped");
+                if (this.statsSuspended > 0) doneParts.push(this.statsSuspended + " suspended");
+                if (this.statsExcluded > 0) doneParts.push(this.statsExcluded + " auto-skipped");
+                const doneEl = document.getElementById("review-done-count");
+                doneEl.textContent = doneParts.length > 0 ? doneParts.join(", ") : "0 cards reviewed";
                 this.hasCard = false;
                 return;
             }
             this.currentGradable = data.gradable;
             this.autoGradeResult = null;
             this.currentFlags = data.flags || [];
-            this.statsReviewed = data.session_stats.reviewed;
-            this.statsRemaining = data.session_stats.remaining;
+            this.applyStats(data.session_stats);
             this.updateProgressBar();
 
-            document.getElementById("review-card-content").innerHTML = data.front_html;
+            const cardEl = document.getElementById("review-card-content");
+            cardEl.innerHTML = data.front_html;
+            renderMath(cardEl);
             this.hideControls();
             this.updateFlagIndicator();
             document.getElementById("review-flip-hint").classList.remove("hidden");
@@ -1129,10 +1512,12 @@ const reviewView = {
     },
 
     async flipCard() {
-        if (this.hasFlipped || !this.hasCard) return;
+        if (this.hasFlipped || !this.hasCard || this.isActing) return;
         try {
             const data = await api("POST", "/api/review/flip", null, this.sessionToken);
-            document.getElementById("review-card-content").innerHTML = data.back_html;
+            const cardEl = document.getElementById("review-card-content");
+            cardEl.innerHTML = data.back_html;
+            renderMath(cardEl);
             document.getElementById("review-flip-hint").classList.add("hidden");
             this.hasFlipped = true;
             if (!this.currentGradable) {
@@ -1144,10 +1529,13 @@ const reviewView = {
     },
 
     async grade(g) {
+        if (this.isActing) return;
+        this.isActing = true;
         try {
             await api("POST", "/api/review/grade", {grade: g, feedback: this.currentFeedback}, this.sessionToken);
             this.loadNext();
         } catch(e) { this.showError(e.message); }
+        finally { this.isActing = false; }
     },
 
     setFeedback(fb) {
@@ -1177,21 +1565,34 @@ const reviewView = {
 
     async undo() {
         this.closePalette();
+        if (!this.sessionToken || this.isActing) return;
         try {
             const data = await api("POST", "/api/review/undo", null, this.sessionToken);
             if (data.ok) {
                 document.getElementById("review-done-screen").style.display = "none";
                 document.getElementById("review-stage").style.display = "block";
                 document.getElementById("review-menu-btn").style.display = "";
-                document.getElementById("review-card-content").innerHTML = data.back_html;
+                const cardEl = document.getElementById("review-card-content");
+                cardEl.innerHTML = data.back_html;
+                renderMath(cardEl);
                 document.getElementById("review-flip-hint").classList.add("hidden");
                 document.getElementById("review-autograde-result").classList.remove("visible");
+                document.getElementById("review-progress-bar").classList.remove("complete");
                 this.showControls(false);
                 this.hasFlipped = true;
                 this.hasCard = true;
                 this.autoGradeResult = null;
+                // Update stats from server response
+                if (data.session_stats) {
+                    this.applyStats(data.session_stats);
+                    this.updateProgressBar();
+                }
             }
-        } catch(e) { this.showError(e.message); }
+        } catch(e) {
+            // "Nothing to undo" is expected, show as toast not error
+            if (e.message && e.message.includes("Nothing")) showToast("Nothing to undo");
+            else this.showError(e.message);
+        }
     },
 
     async toggleFlag() {
@@ -1215,13 +1616,26 @@ const reviewView = {
         } catch(e) { this.showError(e.message); }
     },
 
-    async suspendCard() {
-        if (!this.hasCard) return;
+    async skipCard() {
+        if (!this.hasCard || this.isActing) return;
         this.closePalette();
+        this.isActing = true;
+        try {
+            await api("POST", "/api/review/skip", null, this.sessionToken);
+            this.loadNext();
+        } catch(e) { this.showError(e.message); }
+        finally { this.isActing = false; }
+    },
+
+    async suspendCard() {
+        if (!this.hasCard || this.isActing) return;
+        this.closePalette();
+        this.isActing = true;
         try {
             await api("POST", "/api/review/suspend", null, this.sessionToken);
             this.loadNext();
         } catch(e) { this.showError(e.message); }
+        finally { this.isActing = false; }
     },
 
     showError(msg) {
@@ -1239,7 +1653,9 @@ window.srAutoGrade = async function(grade, response) {
     if (!reviewView.hasFlipped) {
         try {
             const data = await api("POST", "/api/review/flip", null, reviewView.sessionToken);
-            document.getElementById("review-card-content").innerHTML = data.back_html;
+            const cardEl = document.getElementById("review-card-content");
+            cardEl.innerHTML = data.back_html;
+            renderMath(cardEl);
             document.getElementById("review-flip-hint").classList.add("hidden");
             reviewView.hasFlipped = true;
         } catch(e) { reviewView.showError(e.message); return; }
@@ -1257,18 +1673,30 @@ document.addEventListener("keydown", (e) => {
     if (!activeView) return;
 
     if (activeView.id === "view-review") {
-        if (e.key === "Escape") { reviewView.togglePalette(); return; }
+        const paletteOpen = document.getElementById("review-palette").classList.contains("open");
+        if (e.key === "Escape") { if (paletteOpen) reviewView.closePalette(); else reviewView.togglePalette(); return; }
+        // Block all shortcuts while palette is open
+        if (paletteOpen) return;
         if (e.key === " " && !reviewView.hasFlipped && reviewView.hasCard) { e.preventDefault(); reviewView.flipCard(); }
         else if (e.key === "Enter" && reviewView.hasFlipped && (reviewView.autoGradeResult || !reviewView.currentGradable)) reviewView.submitAutoGrade();
         else if (e.key === "1" && reviewView.hasFlipped && !reviewView.autoGradeResult && reviewView.currentGradable) reviewView.grade(0);
         else if (e.key === "2" && reviewView.hasFlipped && !reviewView.autoGradeResult && reviewView.currentGradable) reviewView.grade(1);
         else if (e.key === "f" && reviewView.hasCard) reviewView.toggleFlag();
+        else if (e.key === "k" && reviewView.hasCard) reviewView.skipCard();
         else if (e.key === "e" && reviewView.hasCard) reviewView.editCard();
         else if (e.key === "s" && reviewView.hasCard) reviewView.suspendCard();
         else if (e.key === "z" || e.key === "u") reviewView.undo();
         else if (e.key === "q") showView("decks");
     } else if (activeView.id === "view-browse") {
-        if (e.key === "Escape") browseView.closeDetail();
+        const searchEl = document.getElementById("browse-search");
+        if (document.activeElement === searchEl) {
+            if (e.key === "Escape") { searchEl.blur(); return; }
+            return;
+        }
+        if (e.key === "Escape") { browseView.deselectAll(); return; }
+        if ((e.ctrlKey || e.metaKey) && e.key === "a") { e.preventDefault(); browseView.selectAllVisible(); return; }
+        if (e.key === "ArrowDown") { e.preventDefault(); browseView.moveFocus(1); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); browseView.moveFocus(-1); return; }
     }
 });
 
@@ -1276,10 +1704,84 @@ document.addEventListener("click", (e) => {
     if (!e.target.closest("#review-palette") && !e.target.closest("#review-menu-btn")) {
         reviewView.closePalette();
     }
+    if (!e.target.closest(".vault-selector")) {
+        vaultSelector.close();
+    }
 });
+
+/* ════════════════════════════════════════════════════════════════
+   VAULT SELECTOR
+   ════════════════════════════════════════════════════════════════ */
+const vaultSelector = {
+    loaded: false,
+
+    async init() {
+        try {
+            const vault = await api("GET", "/api/vault");
+            document.getElementById("vault-name").textContent = vault.name || "sr";
+            this.loadList();
+        } catch(e) { console.error(e); }
+    },
+
+    async loadList() {
+        try {
+            const vaults = await api("GET", "/api/vaults");
+            const list = document.getElementById("vault-list");
+            list.innerHTML = "";
+            vaults.forEach(v => {
+                const btn = document.createElement("button");
+                btn.className = "vault-item" + (v.active ? " active" : "");
+                btn.textContent = v.name;
+                btn.title = v.path;
+                btn.onclick = () => this.switchVault(v.path);
+                list.appendChild(btn);
+            });
+            this.loaded = true;
+        } catch(e) { console.error(e); }
+    },
+
+    toggle() {
+        const dd = document.getElementById("vault-dropdown");
+        const isOpen = dd.classList.toggle("open");
+        if (isOpen && !this.loaded) this.loadList();
+        if (isOpen) this.loadList();
+    },
+
+    close() {
+        document.getElementById("vault-dropdown").classList.remove("open");
+    },
+
+    async switchVault(path) {
+        this.close();
+        try {
+            const result = await api("POST", "/api/vault/switch", {path: path});
+            document.getElementById("vault-name").textContent = result.name;
+            decksView.loaded = false;
+            browseView.filtersLoaded = false;
+            // Clear stale review session
+            reviewView.sessionToken = null;
+            reviewView.hasCard = false;
+            reviewView.hasFlipped = false;
+            const activeView = document.querySelector(".view.active");
+            if (activeView) {
+                if (activeView.id === "view-decks") decksView.init();
+                else if (activeView.id === "view-browse") browseView.init();
+            }
+            showToast("Switched to " + result.name);
+        } catch(e) { showToast("Switch failed: " + e.message); }
+    },
+
+    async openFolder() {
+        this.close();
+        const path = prompt("Enter vault path:");
+        if (!path) return;
+        this.switchVault(path);
+    }
+};
 
 /* ── Init: route from hash ── */
 (function() {
+    vaultSelector.init();
     const hash = location.hash.replace("#", "") || "decks";
     if (hash === "review") {
         // Can't resume a review from hash alone, go to decks

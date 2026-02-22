@@ -8,6 +8,7 @@ import urllib.parse
 from importlib.resources import files
 
 from sr.adapters import load_adapter
+from sr.config import list_vaults, register_vault
 from sr.decks import build_deck_tree
 from sr.flags import add_flag, get_flags, remove_flag
 from sr.review_session import ReviewSession, _build_edit_command
@@ -69,6 +70,17 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             return False
         return True
 
+    @staticmethod
+    def _session_stats(session: ReviewSession, remaining: int | None = None) -> dict:
+        return {
+            "reviewed": session.reviewed,
+            "skipped": session.skipped,
+            "suspended": session.suspended,
+            "excluded": session.excluded_count,
+            "remaining": remaining if remaining is not None else session.remaining_count(),
+            "initial_total": session.initial_total,
+        }
+
     # ── GET ──────────────────────────────────────────────────────────
 
     def do_GET(self):
@@ -97,8 +109,8 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                 return
             card = session.get_next_card()
             if not card:
-                self._json_response({"done": True, "session_stats": {
-                    "reviewed": session.reviewed, "remaining": 0}})
+                self._json_response({"done": True,
+                    "session_stats": self._session_stats(session, remaining=0)})
             else:
                 front_html = session.render_front(card)
                 flags = get_flags(session.conn, card["id"])
@@ -108,10 +120,7 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                     "gradable": bool(card["gradable"]),
                     "front_html": front_html,
                     "flags": flags,
-                    "session_stats": {
-                        "reviewed": session.reviewed,
-                        "remaining": session.remaining_count()
-                    }
+                    "session_stats": self._session_stats(session)
                 })
 
         elif path == "/api/review/status":
@@ -120,10 +129,7 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                 return
             if not self._check_token(session):
                 return
-            self._json_response({
-                "reviewed": session.reviewed,
-                "remaining": session.remaining_count()
-            })
+            self._json_response(self._session_stats(session))
 
         # ── Browse ──
         elif path == "/api/browse/cards":
@@ -148,6 +154,35 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                 "SELECT DISTINCT flag FROM card_flags cf JOIN card_state cs ON cf.card_id=cs.card_id "
                 "WHERE cs.status != 'deleted' ORDER BY flag")]
             self._json_response(flags)
+
+        elif path == "/api/browse/paths":
+            paths = [r["source_path"] for r in self.conn.execute(
+                "SELECT DISTINCT c.source_path FROM cards c JOIN card_state cs ON c.id=cs.card_id "
+                "WHERE cs.status != 'deleted' ORDER BY c.source_path")]
+            self._json_response(paths)
+
+        # ── Vault ──
+        elif path == "/api/vault":
+            import pathlib
+            vault = pathlib.Path(AppHandler.sr_dir).parent.resolve() if AppHandler.sr_dir else None
+            if vault:
+                self._json_response({"name": vault.name, "path": str(vault)})
+            else:
+                self._json_response({"name": "", "path": ""})
+
+        elif path == "/api/vaults":
+            import pathlib
+            vaults = list_vaults()
+            active_vault = pathlib.Path(AppHandler.sr_dir).parent.resolve() if AppHandler.sr_dir else None
+            active_path = str(active_vault) if active_vault else ""
+            result = []
+            for v in vaults:
+                result.append({
+                    "name": v.name,
+                    "path": str(v),
+                    "active": str(v) == active_path
+                })
+            self._json_response(result)
 
         else:
             self._error(404, "Not found")
@@ -197,14 +232,11 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                 return
             if not self._check_token(session):
                 return
-            if session.current_card:
-                card_id = session.current_card["id"]
-                session.reviewed_ids.add(card_id)
-                excluded = session._exclude_mutually_exclusive(card_id)
-                session.undo_stack.append({"card": session.current_card, "excluded_ids": excluded})
-                session.reviewed += 1
-                session.current_card = None
-            self._json_response({"ok": True})
+            try:
+                session.skip_current()
+                self._json_response({"ok": True})
+            except ValueError as e:
+                self._error(400, str(e))
 
         elif path == "/api/review/undo":
             session = self._require_session()
@@ -218,10 +250,53 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             import time
             entry = session.undo_stack.pop()
             prev = entry["card"]
-            session.reviewed_ids.discard(prev["id"])
+            card_id = prev["id"]
+            session._unmark_reviewed(card_id)
             for sid in entry["excluded_ids"]:
-                session.reviewed_ids.discard(sid)
-            session.reviewed -= 1
+                session._unmark_reviewed(sid)
+            session.excluded_count -= len(entry["excluded_ids"])
+            if entry.get("was_skip"):
+                session.skipped -= 1
+                session.skipped_ids.discard(card_id)
+                # Remove the skip recommendation
+                session.conn.execute(
+                    "DELETE FROM recommendations WHERE card_id=?", (card_id,))
+                session.conn.commit()
+            elif entry.get("was_suspend"):
+                session.suspended -= 1
+                # Restore card to active and restore old recommendation
+                session.conn.execute(
+                    "UPDATE card_state SET status='active', updated_at=datetime('now') WHERE card_id=?",
+                    (card_id,))
+                old_rec = entry.get("old_rec")
+                if old_rec:
+                    session.conn.execute(
+                        "INSERT OR REPLACE INTO recommendations (card_id, scheduler_id, time, precision_seconds) VALUES (?, ?, ?, ?)",
+                        (old_rec["card_id"], old_rec["scheduler_id"], old_rec["time"], old_rec["precision_seconds"]))
+                session.conn.commit()
+                if session.scheduler:
+                    try:
+                        session.scheduler.on_card_status_changed(card_id, "active")
+                    except Exception:
+                        pass
+            else:
+                session.reviewed -= 1
+                # Remove the review_log entry for this grade
+                session.conn.execute(
+                    "DELETE FROM review_log WHERE id = (SELECT MAX(id) FROM review_log WHERE card_id=? AND session_id=?)",
+                    (card_id, session.session_id))
+                # Restore old recommendation (or remove the new one if there was none)
+                session.conn.execute("DELETE FROM recommendations WHERE card_id=?", (card_id,))
+                old_rec = entry.get("old_rec")
+                if old_rec:
+                    session.conn.execute(
+                        "INSERT OR REPLACE INTO recommendations (card_id, scheduler_id, time, precision_seconds) VALUES (?, ?, ?, ?)",
+                        (old_rec["card_id"], old_rec["scheduler_id"], old_rec["time"], old_rec["precision_seconds"]))
+                session.conn.commit()
+                # Restore scheduler internal state (ease factor, interval, etc.)
+                if session.scheduler and hasattr(session.scheduler, 'restore_card_state'):
+                    old_sched = entry.get("old_sched_state")
+                    session.scheduler.restore_card_state(card_id, old_sched)
             session.current_card = prev
             session.serve_time = time.time()
             session.flip_time = time.time()
@@ -232,7 +307,10 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                 back_html = adapter.render_back(content)
             except Exception as e:
                 back_html = f'<div style="color:var(--wrong)">Render error: {e}</div>'
-            self._json_response({"ok": True, "front_html": front_html, "back_html": back_html})
+            self._json_response({
+                "ok": True, "front_html": front_html, "back_html": back_html,
+                "session_stats": self._session_stats(session)
+            })
 
         elif path == "/api/review/flag":
             session = self._require_session()
@@ -299,6 +377,9 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                 self._error(400, "No current card")
                 return
             card_id = card["id"]
+            # Save recommendation before deleting for undo
+            old_rec = session.conn.execute(
+                "SELECT * FROM recommendations WHERE card_id=?", (card_id,)).fetchone()
             session.conn.execute(
                 "UPDATE card_state SET status='inactive', updated_at=datetime('now') WHERE card_id=?",
                 (card_id,))
@@ -309,13 +390,24 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                     session.scheduler.on_card_status_changed(card_id, "inactive")
                 except Exception:
                     pass
-            session.reviewed_ids.add(card_id)
+            session._mark_reviewed(card_id)
             excluded = session._exclude_mutually_exclusive(card_id)
-            session.undo_stack.append({"card": session.current_card, "excluded_ids": excluded})
+            session.undo_stack.append({
+                "card": session.current_card, "excluded_ids": excluded,
+                "was_suspend": True, "old_rec": dict(old_rec) if old_rec else None,
+            })
+            session.suspended += 1
             session.current_card = None
             self._json_response({"ok": True, "suspended": True})
 
+        # ── Vault ──
+        elif path == "/api/vault/switch":
+            self._handle_vault_switch()
+
         # ── Browse POST ──
+        elif path == "/api/browse/bulk/status":
+            self._handle_bulk_status()
+
         elif path.startswith("/api/browse/cards/") and path.count("/") == 5:
             parts = path.strip("/").split("/")
             try:
@@ -343,6 +435,7 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             db_path = self.sr_dir / "sr.db"
             try:
                 scheduler = load_scheduler(sched_name, self.sr_dir, db_path)
+                AppHandler._scheduler = scheduler
             except Exception:
                 pass
 
@@ -354,12 +447,90 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
         AppHandler._review_session = session
         self._json_response({"session_token": session.token})
 
+    # ── Vault helpers ────────────────────────────────────────────────
+
+    def _handle_vault_switch(self):
+        import pathlib
+        from sr.app import App
+        body = self._read_body()
+        new_path = body.get("path")
+        if not new_path:
+            self._error(400, "path is required")
+            return
+        vault = pathlib.Path(new_path).expanduser().resolve()
+        if not vault.exists():
+            self._error(400, "Path does not exist")
+            return
+        try:
+            app = App(vault=vault)
+            app.sr_dir.mkdir(parents=True, exist_ok=True)
+            app.init_db()
+            try:
+                app.load_scheduler()
+            except Exception:
+                pass
+        except Exception as e:
+            self._error(500, f"Failed to open vault: {e}")
+            return
+
+        # Close old connections
+        old_scheduler = AppHandler._scheduler
+        if old_scheduler and hasattr(old_scheduler, 'close'):
+            try:
+                old_scheduler.close()
+            except Exception:
+                pass
+        if AppHandler.conn:
+            try:
+                AppHandler.conn.close()
+            except Exception:
+                pass
+
+        AppHandler.conn = app.conn
+        AppHandler.sr_dir = app.sr_dir
+        AppHandler.settings = app.settings
+        AppHandler._scheduler = app.scheduler
+        AppHandler._review_session = None
+
+        register_vault(vault)
+
+        self._json_response({"name": vault.name, "path": str(vault)})
+
     # ── Browse helpers ───────────────────────────────────────────────
+
+    def _handle_bulk_status(self):
+        body = self._read_body()
+        card_ids = body.get("card_ids", [])
+        new_status = body.get("status")
+        if new_status not in ("active", "inactive"):
+            self._error(400, "status must be 'active' or 'inactive'")
+            return
+        if not card_ids:
+            self._error(400, "card_ids is required")
+            return
+        placeholders = ",".join("?" * len(card_ids))
+        self.conn.execute(
+            f"UPDATE card_state SET status=?, updated_at=datetime('now') WHERE card_id IN ({placeholders})",
+            [new_status] + list(card_ids))
+        if new_status == "inactive":
+            self.conn.execute(
+                f"DELETE FROM recommendations WHERE card_id IN ({placeholders})",
+                list(card_ids))
+        self.conn.commit()
+        scheduler = AppHandler._scheduler
+        if scheduler:
+            for cid in card_ids:
+                try:
+                    scheduler.on_card_status_changed(cid, new_status)
+                except Exception:
+                    pass
+        self._json_response({"ok": True, "updated": len(card_ids)})
 
     def _handle_browse_cards(self, qs):
         status = qs.get("status", [None])[0]
         tag = qs.get("tag", [None])[0]
         flag = qs.get("flag", [None])[0]
+        path_filter = qs.get("path", [None])[0]
         q = qs.get("q", [None])[0]
         off = int(qs.get("offset", [0])[0])
         lim = int(qs.get("limit", [50])[0])
@@ -376,9 +547,12 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
         if flag:
             where.append("c.id IN (SELECT card_id FROM card_flags WHERE flag = ?)")
             params.append(flag)
+        if path_filter:
+            where.append("c.source_path LIKE ?")
+            params.append(f"{path_filter}%")
         if q:
-            where.append("(c.display_text LIKE ? OR c.source_path LIKE ?)")
-            params.extend([f"%{q}%", f"%{q}%"])
+            where.append("(c.display_text LIKE ? OR c.source_path LIKE ? OR c.content LIKE ?)")
+            params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
 
         where_sql = " AND ".join(where)
 
@@ -387,7 +561,9 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             params).fetchone()["cnt"]
 
         rows = self.conn.execute(f"""
-            SELECT c.id, c.display_text, c.source_path, cs.status
+            SELECT c.id, c.display_text, c.source_path, cs.status,
+                   (SELECT GROUP_CONCAT(tag, '\t') FROM card_tags WHERE card_id=c.id) as _tags,
+                   (SELECT GROUP_CONCAT(flag, '\t') FROM card_flags WHERE card_id=c.id) as _flags
             FROM cards c JOIN card_state cs ON c.id=cs.card_id
             WHERE {where_sql}
             ORDER BY c.id DESC LIMIT ? OFFSET ?
@@ -395,13 +571,10 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
 
         cards = []
         for r in rows:
-            cid = r["id"]
-            tags = [row["tag"] for row in self.conn.execute(
-                "SELECT tag FROM card_tags WHERE card_id=?", (cid,))]
-            flags = [row["flag"] for row in self.conn.execute(
-                "SELECT flag FROM card_flags WHERE card_id=?", (cid,))]
+            tags = r["_tags"].split("\t") if r["_tags"] else []
+            flags = r["_flags"].split("\t") if r["_flags"] else []
             cards.append({
-                "id": cid, "display_text": r["display_text"],
+                "id": r["id"], "display_text": r["display_text"],
                 "source_path": r["source_path"], "status": r["status"],
                 "tags": tags, "flags": flags
             })
@@ -510,6 +683,10 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             self._error(404, "Not found")
 
 
+class _ReusableServer(http.server.HTTPServer):
+    allow_reuse_address = True
+
+
 def start_server(conn, sr_dir, settings, scheduler=None, get_adapter_fn=None):
     port = settings.get("review_port", 8791)
     AppHandler.conn = conn
@@ -519,8 +696,7 @@ def start_server(conn, sr_dir, settings, scheduler=None, get_adapter_fn=None):
     AppHandler._scheduler = scheduler
     AppHandler._review_session = None
 
-    server = http.server.HTTPServer(("127.0.0.1", port), AppHandler)
-    server.allow_reuse_address = True
+    server = _ReusableServer(("127.0.0.1", port), AppHandler)
     url = f"http://127.0.0.1:{port}"
     print(f"sr running at {url}")
     print(f"Press Ctrl+C to stop")

@@ -64,6 +64,13 @@ CREATE TABLE IF NOT EXISTS card_flags (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (card_id, flag)
 );
+
+CREATE INDEX IF NOT EXISTS idx_card_state_status ON card_state(status);
+CREATE INDEX IF NOT EXISTS idx_recommendations_time ON recommendations(time);
+CREATE INDEX IF NOT EXISTS idx_review_log_card_session ON review_log(card_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_card_relations_upstream ON card_relations(upstream_card_id);
+CREATE INDEX IF NOT EXISTS idx_card_relations_downstream ON card_relations(downstream_card_id);
+CREATE INDEX IF NOT EXISTS idx_cards_source_path ON cards(source_path);
 """
 
 

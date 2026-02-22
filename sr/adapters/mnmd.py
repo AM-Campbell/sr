@@ -250,7 +250,7 @@ class Adapter:
                 card = Card(
                     key=key, content={"text": card_text},
                     source_line=block_start_line,
-                    display_text=card_text[:200],
+                    display_text=card_text[:500],
                     tags=list(tags),
                 )
                 card_by_key[key] = card
@@ -263,11 +263,11 @@ class Adapter:
                 card_text = _apply_scope(card_text, blocks, block_idx,
                                          first.scope_before, first.scope_after)
                 answers = [clozes[i].answer for i in indices]
-                key = f"group_{gid}"
+                key = f"group_L{block_start_line}_{gid}"
                 card = Card(
                     key=key, content={"text": card_text},
                     source_line=block_start_line,
-                    display_text=card_text[:200],
+                    display_text=card_text[:500],
                     tags=list(tags),
                 )
                 card_by_key[key] = card
@@ -285,11 +285,11 @@ class Adapter:
 
                     step_id = steps[step_k][0]
                     cloze_idx = steps[step_k][1]
-                    key = f"seq_{base}_{step_id}"
+                    key = f"seq_L{block_start_line}_{base}_{step_id}"
                     card = Card(
                         key=key, content={"text": card_text},
                         source_line=block_start_line,
-                        display_text=card_text[:200],
+                        display_text=card_text[:500],
                         tags=list(tags),
                     )
                     card_by_key[key] = card
@@ -322,6 +322,7 @@ class Adapter:
 
         Order: markdown → HTML first, then cloze substitution. This ensures
         all text is properly escaped before we inject our own HTML elements.
+        Uses KaTeX htmlClass for clozes inside math, <mark> for clozes outside.
         """
         text = card_content.get("text", "")
         text = _md_to_html(text)
@@ -329,12 +330,13 @@ class Adapter:
         def replace_front(m):
             inner = m.group(1)
             _cid, _answer, hint = _parse_cloze_inner(inner)
-            if hint:
-                # hint is already HTML-escaped by _md_to_html
-                return f'<span class="cloze-blank">[{hint}…]</span>'
-            return '<span class="cloze-blank">[…]</span>'
+            label = f'{hint}…' if hint else '…'
+            if _in_math(text, m.start()):
+                return rf'\htmlClass{{cloze-math}}{{\ {label}\ }}'
+            return f'<mark>{label}</mark>'
 
         text = _CLOZE_RE.sub(replace_front, text)
+        text = _finalize_math(text)
         return f"<div>{text}</div>"
 
     def render_back(self, card_content: dict) -> str:
@@ -342,6 +344,7 @@ class Adapter:
 
         Order: markdown → HTML first, then cloze substitution. This ensures
         all text is properly escaped before we inject our own HTML elements.
+        Uses KaTeX htmlClass for clozes inside math, <mark> for clozes outside.
         """
         text = card_content.get("text", "")
         text = _md_to_html(text)
@@ -349,17 +352,38 @@ class Adapter:
         def replace_back(m):
             inner = m.group(1)
             _cid, answer, _hint = _parse_cloze_inner(inner)
+            if _in_math(text, m.start()):
+                return rf'\htmlClass{{cloze-math-answer}}{{\ {answer}\ }}'
             return f'<mark>{answer}</mark>'
 
         text = _CLOZE_RE.sub(replace_back, text)
+        text = _finalize_math(text)
         return f"<div>{text}</div>"
+
+
+_MATH_BLOCK_RE = re.compile(r'\$\$(.+?)\$\$', re.DOTALL)
+_MATH_INLINE_RE = re.compile(r'(?<!\$)\$(?!\$|\s)(\S.*?\S|\S)(?<!\$)\$(?!\$)')
 
 
 def _md_to_html(text: str) -> str:
     """Minimal markdown to HTML: escape, backticks → code, bold, italic, newlines → br.
 
     {{ and }} are not affected by html.escape, so cloze markers survive intact.
+    Math delimiters ($, $$) are preserved through a placeholder mechanism so they
+    survive HTML escaping — _finalize_math() converts them to KaTeX spans after
+    cloze substitution is complete.
     """
+    # Stash math content before HTML escaping so LaTeX symbols survive
+    math_slots = []
+    def _stash_math_block(m):
+        math_slots.append(('block', m.group(1)))
+        return f'\x00MATH{len(math_slots) - 1}\x00'
+    def _stash_math_inline(m):
+        math_slots.append(('inline', m.group(1)))
+        return f'\x00MATH{len(math_slots) - 1}\x00'
+    text = _MATH_BLOCK_RE.sub(_stash_math_block, text)
+    text = _MATH_INLINE_RE.sub(_stash_math_inline, text)
+
     text = html.escape(text)
     # Code blocks
     text = re.sub(r'```(\w*)\n(.*?)```', _code_block, text, flags=re.DOTALL)
@@ -369,10 +393,58 @@ def _md_to_html(text: str) -> str:
     text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
     # Italic
     text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
-    # Double newlines → paragraph break, single newlines → space (standard markdown)
+    # Lists: convert markdown list items to HTML before newline handling
+    text = re.sub(r'(?m)^(\s*)[-*+] (.+)', r'\1<li>\2</li>', text)
+    text = re.sub(r'(?m)^(\s*)\d+\. (.+)', r'\1<li>\2</li>', text)
+    # Double newlines → paragraph break, single newlines → <br> if adjacent to list
     text = re.sub(r'\n{2,}', '<br><br>', text)
+    text = re.sub(r'\n(?=<li>)', '', text)        # no break before list item
+    text = re.sub(r'(</li>)\n', r'\1', text)      # no break after list item
     text = text.replace("\n", " ")
+
+    # Restore math placeholders — but keep them as placeholders that include
+    # the raw LaTeX. _finalize_math() will wrap them in KaTeX spans after
+    # cloze substitution is done.
+    def _restore_placeholder(m):
+        idx = int(m.group(1))
+        kind, latex = math_slots[idx]
+        delim = '$$' if kind == 'block' else '$'
+        return f'{delim}{latex}{delim}'
+    text = re.sub(r'\x00MATH(\d+)\x00', _restore_placeholder, text)
     return text
+
+
+def _in_math(text: str, pos: int) -> bool:
+    """Check if position `pos` in text is inside a $...$ or $$...$$ block."""
+    # Count unescaped $ signs before pos
+    i = 0
+    in_block = False
+    in_inline = False
+    while i < pos:
+        if text[i:i+2] == '$$':
+            in_block = not in_block
+            i += 2
+        elif text[i] == '$' and not in_block:
+            in_inline = not in_inline
+            i += 1
+        else:
+            i += 1
+    return in_block or in_inline
+
+
+def _finalize_math(html_text: str) -> str:
+    """Convert $...$ and $$...$$ in rendered HTML to KaTeX spans.
+
+    Called AFTER cloze substitution so cloze markup inside math is included
+    in the KaTeX span (the frontend renders the <mark> tags alongside LaTeX).
+    """
+    def _block_repl(m):
+        return f'<span class="katex-block">{m.group(1)}</span>'
+    def _inline_repl(m):
+        return f'<span class="katex-inline">{m.group(1)}</span>'
+    html_text = _MATH_BLOCK_RE.sub(_block_repl, html_text)
+    html_text = _MATH_INLINE_RE.sub(_inline_repl, html_text)
+    return html_text
 
 
 def _code_block(match):

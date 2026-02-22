@@ -9,9 +9,11 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from datetime import timedelta
+
 from sr.adapters import load_adapter
 from sr.flags import add_flag, get_flags, remove_flag
-from sr.models import ReviewEvent
+from sr.models import Recommendation, ReviewEvent
 from sr.sync import _upsert_recommendation
 
 
@@ -34,7 +36,26 @@ class ReviewSession:
         self.flip_time = None
         self.serve_time = None
         self.reviewed = 0
+        self.skipped = 0
+        self.suspended = 0
+        self.skipped_ids: set[int] = set()
+        self.excluded_count = 0
         self.reviewed_ids: set[int] = set()
+        # Temp table for reviewed IDs — avoids unbounded NOT IN (?, ?, ...) clauses
+        self._reviewed_table = f"_reviewed_{uuid.uuid4().hex[:8]}"
+        self.conn.execute(f"CREATE TEMP TABLE {self._reviewed_table} (card_id INTEGER PRIMARY KEY)")
+        self.initial_total = self.remaining_count()
+
+    def _mark_reviewed(self, card_id: int):
+        """Add a card ID to the reviewed set and temp table."""
+        if card_id not in self.reviewed_ids:
+            self.reviewed_ids.add(card_id)
+            self.conn.execute(f"INSERT OR IGNORE INTO {self._reviewed_table} VALUES (?)", (card_id,))
+
+    def _unmark_reviewed(self, card_id: int):
+        """Remove a card ID from the reviewed set and temp table."""
+        self.reviewed_ids.discard(card_id)
+        self.conn.execute(f"DELETE FROM {self._reviewed_table} WHERE card_id = ?", (card_id,))
 
     def _filter_clause(self) -> tuple[str, list]:
         """Build the WHERE filters shared by card queries."""
@@ -50,9 +71,7 @@ class ReviewSession:
             clauses.append("c.id IN (SELECT card_id FROM card_flags WHERE flag = ?)")
             params.append(self.flag_filter)
         if self.reviewed_ids:
-            placeholders = ",".join("?" * len(self.reviewed_ids))
-            clauses.append(f"c.id NOT IN ({placeholders})")
-            params.extend(self.reviewed_ids)
+            clauses.append(f"c.id NOT IN (SELECT card_id FROM {self._reviewed_table})")
         extra = (" AND " + " AND ".join(clauses)) if clauses else ""
         return extra, params
 
@@ -65,7 +84,7 @@ class ReviewSession:
             LEFT JOIN recommendations r ON c.id = r.card_id
             WHERE cs.status = 'active' AND c.gradable = 1
               AND (r.time IS NULL OR r.time <= datetime('now')){extra}
-            ORDER BY CASE WHEN r.time IS NULL THEN 1 ELSE 0 END, r.time ASC, c.id ASC
+            ORDER BY CASE WHEN r.time IS NULL THEN 1 ELSE 0 END, r.time ASC, RANDOM()
             LIMIT 1
         """, params).fetchone()
         if not row:
@@ -105,6 +124,14 @@ class ReviewSession:
               feedback, json.dumps(response) if response else None))
         self.conn.commit()
 
+        # Save old recommendation and scheduler state before scheduler overwrites them
+        old_rec_row = self.conn.execute(
+            "SELECT * FROM recommendations WHERE card_id=?", (card_id,)).fetchone()
+        old_rec = dict(old_rec_row) if old_rec_row else None
+        old_sched_state = None
+        if self.scheduler and hasattr(self.scheduler, 'get_card_state'):
+            old_sched_state = self.scheduler.get_card_state(card_id)
+
         if self.scheduler:
             event = ReviewEvent(
                 card_id=card_id, timestamp=ts, grade=grade,
@@ -120,10 +147,52 @@ class ReviewSession:
             except Exception as e:
                 print(f"Warning: scheduler on_review failed: {e}", file=sys.stderr)
 
-        self.reviewed_ids.add(card_id)
+        # Check if the scheduler wants to show this card again soon
+        # (learning steps, relearning). If so, keep it out of reviewed_ids
+        # so it reappears when its recommendation time arrives.
+        new_rec = self.conn.execute(
+            "SELECT time FROM recommendations WHERE card_id=?", (card_id,)).fetchone()
+        restudy_soon = False
+        if new_rec and new_rec["time"]:
+            try:
+                rec_time = datetime.strptime(new_rec["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                minutes_away = (rec_time - datetime.now(timezone.utc)).total_seconds() / 60
+                restudy_soon = minutes_away < 30
+            except (ValueError, TypeError):
+                pass
+
+        # Exclude mutually exclusive siblings regardless
+        self._mark_reviewed(card_id)
         excluded = self._exclude_mutually_exclusive(card_id)
-        self.undo_stack.append({"card": self.current_card, "excluded_ids": excluded})
+        if restudy_soon:
+            # Let the card come back when its recommendation is due
+            self._unmark_reviewed(card_id)
+        self.undo_stack.append({"card": self.current_card, "excluded_ids": excluded,
+                                "old_rec": old_rec, "old_sched_state": old_sched_state,
+                                "grade": grade})
         self.reviewed += 1
+        self.current_card = None
+
+    def skip_current(self):
+        """Skip the current card, rescheduling it to tomorrow."""
+        if not self.current_card:
+            raise ValueError("No current card")
+        card_id = self.current_card["id"]
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+        rec = Recommendation(card_id=card_id, time=tomorrow, precision_seconds=3600)
+        if self.scheduler:
+            _upsert_recommendation(self.conn, rec, self.scheduler)
+        else:
+            self.conn.execute("""
+                INSERT OR REPLACE INTO recommendations (card_id, scheduler_id, time, precision_seconds)
+                VALUES (?, 'manual', ?, ?)
+            """, (card_id, tomorrow, 3600))
+        self.conn.commit()
+        self._mark_reviewed(card_id)
+        self.skipped_ids.add(card_id)
+        excluded = self._exclude_mutually_exclusive(card_id)
+        self.undo_stack.append({"card": self.current_card, "excluded_ids": excluded, "was_skip": True})
+        self.skipped += 1
         self.current_card = None
 
     def _exclude_mutually_exclusive(self, card_id: int) -> set[int]:
@@ -141,7 +210,8 @@ class ReviewSession:
             sid = row["sibling"]
             if sid not in self.reviewed_ids:
                 excluded.add(sid)
-            self.reviewed_ids.add(sid)
+            self._mark_reviewed(sid)
+        self.excluded_count += len(excluded)
         return excluded
 
     def remaining_count(self) -> int:

@@ -9,7 +9,8 @@ def build_deck_tree(conn: sqlite3.Connection) -> list[dict]:
     """Build a hierarchical deck tree from source paths of gradable cards."""
     rows = conn.execute("""
         SELECT c.source_path, cs.status,
-               CASE WHEN r.time IS NOT NULL AND r.time <= datetime('now') THEN 1 ELSE 0 END as is_due
+               CASE WHEN r.card_id IS NULL THEN 1 ELSE 0 END as is_new,
+               CASE WHEN r.time IS NOT NULL AND r.time <= datetime('now') THEN 1 ELSE 0 END as is_review
         FROM cards c
         JOIN card_state cs ON c.id = cs.card_id
         LEFT JOIN recommendations r ON c.id = r.card_id
@@ -23,12 +24,14 @@ def build_deck_tree(conn: sqlite3.Connection) -> list[dict]:
     for r in rows:
         sp = r["source_path"]
         if sp not in path_stats:
-            path_stats[sp] = {"total": 0, "active": 0, "due": 0}
+            path_stats[sp] = {"total": 0, "active": 0, "new": 0, "review": 0}
         path_stats[sp]["total"] += 1
         if r["status"] == "active":
             path_stats[sp]["active"] += 1
-            if r["is_due"]:
-                path_stats[sp]["due"] += 1
+            if r["is_new"]:
+                path_stats[sp]["new"] += 1
+            elif r["is_review"]:
+                path_stats[sp]["review"] += 1
 
     all_paths = list(path_stats.keys())
 
@@ -95,7 +98,8 @@ def build_deck_tree(conn: sqlite3.Connection) -> list[dict]:
                 "children": children,
                 "total": stats["total"],
                 "active": stats["active"],
-                "due": stats["due"],
+                "new": stats["new"],
+                "review": stats["review"],
                 "is_leaf": is_leaf,
             })
         return result
@@ -104,18 +108,21 @@ def build_deck_tree(conn: sqlite3.Connection) -> list[dict]:
 
 
 def _aggregate_stats(d: dict) -> dict:
-    """Recursively aggregate total/active/due from a tree dict."""
+    """Recursively aggregate total/active/new/review from a tree dict."""
     total = 0
     active = 0
-    due = 0
+    new = 0
+    review = 0
     if "__stats__" in d:
         total += d["__stats__"]["total"]
         active += d["__stats__"]["active"]
-        due += d["__stats__"]["due"]
+        new += d["__stats__"]["new"]
+        review += d["__stats__"]["review"]
     for k in d:
         if not k.startswith("__"):
             sub = _aggregate_stats(d[k])
             total += sub["total"]
             active += sub["active"]
-            due += sub["due"]
-    return {"total": total, "active": active, "due": due}
+            new += sub["new"]
+            review += sub["review"]
+    return {"total": total, "active": active, "new": new, "review": review}

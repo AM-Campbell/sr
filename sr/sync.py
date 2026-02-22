@@ -108,6 +108,12 @@ def sync_cards(conn: sqlite3.Connection,
             stats["new"] += 1
 
     for key_tuple, row in existing_map.items():
+        source_path = row["source_path"]
+        # Only delete if the source file was actually scanned successfully
+        # or the file no longer exists on disk. This prevents accidental
+        # deletion when a file is temporarily unreadable.
+        if source_path not in scanned_sources and pathlib.Path(source_path).exists():
+            continue
         conn.execute(
             "UPDATE card_state SET status='deleted', updated_at=datetime('now') WHERE card_id=?",
             (row["id"],))

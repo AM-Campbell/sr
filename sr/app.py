@@ -26,10 +26,13 @@ class App:
         app.init_db(":memory:")
     """
 
-    def __init__(self, sr_dir: pathlib.Path | str | None = None):
-        if sr_dir is None:
+    def __init__(self, sr_dir: pathlib.Path | str | None = None, vault: pathlib.Path | str | None = None):
+        if sr_dir is None and vault is None:
             sr_dir = get_sr_dir()
+        if vault is not None:
+            sr_dir = pathlib.Path(vault) / ".sr"
         self.sr_dir = pathlib.Path(sr_dir)
+        self.vault = self.sr_dir.parent
         self.settings = load_settings(self.sr_dir)
         self._adapter_cache: dict[str, Any] = {}
         self.conn: sqlite3.Connection | None = None

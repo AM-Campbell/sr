@@ -12,8 +12,10 @@ from sr.db import init_db
 
 @pytest.fixture
 def tmp_sr_dir(tmp_path):
-    """Create a temporary sr directory with schedulers/ subdir."""
-    sr_dir = tmp_path / "sr_dir"
+    """Create a temporary sr directory (vault/.sr) with schedulers/ subdir."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    sr_dir = vault / ".sr"
     sr_dir.mkdir()
     (sr_dir / "schedulers" / "sm2").mkdir(parents=True)
 

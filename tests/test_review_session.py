@@ -158,6 +158,62 @@ def test_reviewed_ids_exclusion():
     conn.close()
 
 
+def test_skip_current():
+    """skip_current() reschedules to tomorrow, increments skipped (not reviewed)."""
+    conn = init_db(":memory:")
+    _setup_cards(conn, [
+        ("/test.md", "q1", {"q": "Q1", "a": "A1"}, True, []),
+        ("/test.md", "q2", {"q": "Q2", "a": "A2"}, True, []),
+    ])
+    session = ReviewSession(conn, None, None, get_adapter_fn=lambda _: FakeAdapter())
+    card = session.get_next_card()
+    card_id = card["id"]
+    session.skip_current()
+
+    assert session.skipped == 1
+    assert session.reviewed == 0
+    assert card_id in session.skipped_ids
+    assert card_id in session.reviewed_ids
+    assert session.current_card is None
+
+    # Recommendation should exist for the skipped card
+    rec = conn.execute("SELECT * FROM recommendations WHERE card_id=?", (card_id,)).fetchone()
+    assert rec is not None
+    assert rec["precision_seconds"] == 3600
+
+    # Next card should be the other one
+    card2 = session.get_next_card()
+    assert card2 is not None
+    assert card2["id"] != card_id
+    conn.close()
+
+
+def test_excluded_count():
+    """excluded_count tracks how many cards were auto-excluded via mutual exclusivity."""
+    conn = init_db(":memory:")
+    _setup_cards(conn, [
+        ("/test.md", "q1", {"q": "Q1", "a": "A1"}, True, []),
+        ("/test.md", "q2", {"q": "Q2", "a": "A2"}, True, []),
+    ])
+    # Add mutual exclusivity relation between card 1 and card 2
+    conn.execute(
+        "INSERT INTO card_relations (upstream_card_id, downstream_card_id, relation_type) VALUES (1, 2, 'mutually_exclusive')")
+    conn.commit()
+
+    session = ReviewSession(conn, None, None, get_adapter_fn=lambda _: FakeAdapter())
+    session.get_next_card()
+    session.flip()
+    session.grade_current(1)
+
+    assert session.excluded_count == 1
+    assert session.reviewed == 1
+    # Card 2 should be excluded
+    assert 2 in session.reviewed_ids
+    # No more cards
+    assert session.get_next_card() is None
+    conn.close()
+
+
 def test_remaining_count():
     conn = init_db(":memory:")
     _setup_cards(conn, [

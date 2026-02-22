@@ -137,10 +137,15 @@ def test_decks_tree():
         assert len(tree) > 0
         total = sum(n["total"] for n in tree)
         assert total == 3
-        due = sum(n["due"] for n in tree)
-        assert due == 1
         active = sum(n["active"] for n in tree)
         assert active == 3
+        # new/review split: q1 has a past-due recommendation so it's review
+        # q2 and q3 have no recommendation so they're new
+        # Only sum top-level nodes (they already aggregate children)
+        total_new = sum(n.get("new", 0) for n in tree)
+        total_review = sum(n.get("review", 0) for n in tree)
+        assert total_review == 1
+        assert total_new == 2
     finally:
         server.shutdown()
         conn.close()
@@ -492,6 +497,254 @@ def test_404_on_unknown_path():
     try:
         status, body = _api_status(port, "GET", "/api/unknown")
         assert status == 404
+    finally:
+        server.shutdown()
+        conn.close()
+
+
+# ── Skip reschedule ───────────────────────────────────────────
+
+def test_skip_reschedules():
+    """Skipping a card reschedules it to tomorrow and tracks as skipped."""
+    conn = init_db(":memory:")
+    _insert_review_cards(conn, num_cards=2)
+    server, port = _setup_server(conn)
+    try:
+        token = _api(port, "POST", "/api/review/start", body={})["session_token"]
+        first = _api(port, "GET", "/api/review/next", token=token)
+        first_id = first["id"]
+        _api(port, "POST", "/api/review/flip", token=token)
+        _api(port, "POST", "/api/review/skip", token=token)
+
+        # Should have a recommendation now
+        rec = conn.execute("SELECT * FROM recommendations WHERE card_id=?", (first_id,)).fetchone()
+        assert rec is not None
+
+        # Stats should show skipped, not reviewed
+        next_data = _api(port, "GET", "/api/review/next", token=token)
+        assert next_data["session_stats"]["skipped"] == 1
+        assert next_data["session_stats"]["reviewed"] == 0
+    finally:
+        server.shutdown()
+        conn.close()
+
+
+# ── Browse paths ──────────────────────────────────────────────
+
+def test_browse_paths_endpoint():
+    conn = init_db(":memory:")
+    _insert_browse_cards(conn)
+    server, port = _setup_server(conn)
+    try:
+        paths = _api(port, "GET", "/api/browse/paths")
+        assert isinstance(paths, list)
+        assert "/test.md" in paths
+        assert "/other.md" in paths
+    finally:
+        server.shutdown()
+        conn.close()
+
+
+def test_browse_path_filter():
+    conn = init_db(":memory:")
+    _insert_browse_cards(conn)
+    server, port = _setup_server(conn)
+    try:
+        data = _api(port, "GET", "/api/browse/cards?path=/other.md")
+        assert data["total"] == 1
+        assert "Rust" in data["cards"][0]["display_text"]
+    finally:
+        server.shutdown()
+        conn.close()
+
+
+# ── Bulk status ───────────────────────────────────────────────
+
+def test_bulk_status():
+    conn = init_db(":memory:")
+    _insert_browse_cards(conn)
+    server, port = _setup_server(conn)
+    try:
+        data = _api(port, "POST", "/api/browse/bulk/status",
+                    body={"card_ids": [1, 2], "status": "inactive"})
+        assert data["ok"] is True
+        assert data["updated"] == 2
+
+        row1 = conn.execute("SELECT status FROM card_state WHERE card_id=1").fetchone()
+        row2 = conn.execute("SELECT status FROM card_state WHERE card_id=2").fetchone()
+        assert row1["status"] == "inactive"
+        assert row2["status"] == "inactive"
+
+        # Re-activate
+        data = _api(port, "POST", "/api/browse/bulk/status",
+                    body={"card_ids": [1, 2], "status": "active"})
+        assert data["ok"] is True
+        row1 = conn.execute("SELECT status FROM card_state WHERE card_id=1").fetchone()
+        assert row1["status"] == "active"
+    finally:
+        server.shutdown()
+        conn.close()
+
+
+def test_bulk_status_invalid():
+    conn = init_db(":memory:")
+    _insert_browse_cards(conn)
+    server, port = _setup_server(conn)
+    try:
+        status, body = _api_status(port, "POST", "/api/browse/bulk/status",
+                                   body={"card_ids": [1], "status": "deleted"})
+        assert status == 400
+    finally:
+        server.shutdown()
+        conn.close()
+
+
+# ── Vault API ──────────────────────────────────────────────────
+
+def test_vault_info():
+    conn = init_db(":memory:")
+    server, port = _setup_server(conn)
+    try:
+        import pathlib, tempfile
+        with tempfile.TemporaryDirectory() as td:
+            vault = pathlib.Path(td) / "my-vault"
+            vault.mkdir()
+            sr_dir = vault / ".sr"
+            sr_dir.mkdir()
+            AppHandler.sr_dir = sr_dir
+            data = _api(port, "GET", "/api/vault")
+            assert "name" in data
+            assert "path" in data
+            assert data["name"] == "my-vault"
+    finally:
+        AppHandler.sr_dir = None
+        server.shutdown()
+        conn.close()
+
+
+def test_vaults_list(monkeypatch):
+    import pathlib, tempfile
+    conn = init_db(":memory:")
+    server, port = _setup_server(conn)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = pathlib.Path(td)
+        monkeypatch.setattr(pathlib.Path, "home", lambda: tmp)
+        vault = tmp / "my-sr"
+        vault.mkdir()
+        sr_dir = vault / ".sr"
+        sr_dir.mkdir()
+        AppHandler.sr_dir = sr_dir
+        from sr.config import register_vault
+        register_vault(vault)
+        try:
+            data = _api(port, "GET", "/api/vaults")
+            assert isinstance(data, list)
+            assert len(data) >= 1
+            active_vaults = [v for v in data if v["active"]]
+            assert len(active_vaults) == 1
+        finally:
+            AppHandler.sr_dir = None
+            server.shutdown()
+            conn.close()
+
+
+def test_vault_switch(monkeypatch, tmp_path):
+    import pathlib, shutil
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
+    # Create two vault dirs
+    vault1 = tmp_path / "vault1"
+    vault1.mkdir()
+    (vault1 / ".sr").mkdir()
+    vault2 = tmp_path / "vault2"
+    vault2.mkdir()
+    sr2 = vault2 / ".sr"
+    sr2.mkdir()
+    (sr2 / "settings.toml").write_text('scheduler = "sm2"\n')
+    # Copy scheduler
+    bundled = pathlib.Path(__file__).parent.parent / "schedulers" / "sm2"
+    if bundled.exists():
+        sched_dst = sr2 / "schedulers" / "sm2"
+        sched_dst.mkdir(parents=True)
+        shutil.copy(bundled / "sm2.py", sched_dst / "sm2.py")
+
+    conn = init_db(":memory:")
+    server, port = _setup_server(conn)
+    AppHandler.sr_dir = vault1 / ".sr"
+    try:
+        data = _api(port, "POST", "/api/vault/switch", body={"path": str(vault2)})
+        assert data["name"] == "vault2"
+        assert str(vault2.resolve()) in data["path"]
+        # Review session should be cleared
+        assert AppHandler._review_session is None
+        # sr_dir should be vault2/.sr
+        assert AppHandler.sr_dir == vault2 / ".sr"
+    finally:
+        AppHandler.sr_dir = None
+        server.shutdown()
+        if AppHandler.conn:
+            AppHandler.conn.close()
+
+
+def test_vault_switch_nonexistent():
+    conn = init_db(":memory:")
+    server, port = _setup_server(conn)
+    try:
+        status, body = _api_status(port, "POST", "/api/vault/switch",
+                                   body={"path": "/nonexistent/path"})
+        assert status == 400
+    finally:
+        server.shutdown()
+        conn.close()
+
+
+# ── Suspend + undo ────────────────────────────────────────────
+
+def test_suspend_and_undo_restores_card():
+    """Suspending a card then undoing should restore it to active."""
+    conn = init_db(":memory:")
+    _insert_review_cards(conn, num_cards=2)
+    server, port = _setup_server(conn)
+    try:
+        token = _api(port, "POST", "/api/review/start", body={})["session_token"]
+        first = _api(port, "GET", "/api/review/next", token=token)
+        first_id = first["id"]
+
+        # Suspend
+        _api(port, "POST", "/api/review/suspend", token=token)
+        row = conn.execute("SELECT status FROM card_state WHERE card_id=?", (first_id,)).fetchone()
+        assert row["status"] == "inactive"
+
+        # Undo
+        undo_data = _api(port, "POST", "/api/review/undo", token=token)
+        assert undo_data["ok"] is True
+        row = conn.execute("SELECT status FROM card_state WHERE card_id=?", (first_id,)).fetchone()
+        assert row["status"] == "active"
+    finally:
+        server.shutdown()
+        conn.close()
+
+
+def test_grade_undo_removes_review_log():
+    """Undoing a grade should remove the review_log entry."""
+    conn = init_db(":memory:")
+    _insert_review_cards(conn, num_cards=2)
+    server, port = _setup_server(conn)
+    try:
+        token = _api(port, "POST", "/api/review/start", body={})["session_token"]
+        _api(port, "GET", "/api/review/next", token=token)
+        _api(port, "POST", "/api/review/flip", token=token)
+        _api(port, "POST", "/api/review/grade", body={"grade": 1}, token=token)
+
+        # Should have 1 review_log entry
+        count = conn.execute("SELECT COUNT(*) as cnt FROM review_log").fetchone()["cnt"]
+        assert count == 1
+
+        # Undo
+        _api(port, "POST", "/api/review/undo", token=token)
+
+        # Review log should be empty
+        count = conn.execute("SELECT COUNT(*) as cnt FROM review_log").fetchone()["cnt"]
+        assert count == 0
     finally:
         server.shutdown()
         conn.close()

@@ -354,8 +354,8 @@ class TestCardGeneration:
         cards = adapter.parse(text, "/test.md", {})
         assert len(cards) == 2
         # First card should test step 1.1 (first)
-        assert cards[0].key == "seq_1_1.1"
-        assert cards[1].key == "seq_1_1.2"
+        assert cards[0].key == "seq_L4_1_1.1"
+        assert cards[1].key == "seq_L4_1_1.2"
 
     def test_sequence_with_ungrouped_in_same_block(self, adapter):
         """Non-sequence clozes become plain text in sequence cards."""
@@ -374,10 +374,10 @@ class TestCardGeneration:
         text = "---\nsr_adapter: mnmd\n---\n{{1.1::a}} {{2.1::x}} {{1.2::b}} {{2.2::y}}."
         cards = adapter.parse(text, "/test.md", {})
         keys = [c.key for c in cards]
-        assert "seq_1_1.1" in keys
-        assert "seq_1_1.2" in keys
-        assert "seq_2_2.1" in keys
-        assert "seq_2_2.2" in keys
+        assert "seq_L4_1_1.1" in keys
+        assert "seq_L4_1_1.2" in keys
+        assert "seq_L4_2_2.1" in keys
+        assert "seq_L4_2_2.2" in keys
         assert len(cards) == 4
 
     def test_card_keys_prefixes(self, adapter):
@@ -435,12 +435,20 @@ class TestCardGeneration:
         long_text = "a" * 300
         text = f"---\nsr_adapter: mnmd\n---\n{long_text} {{{{{long_text}}}}}."
         cards = adapter.parse(text, "/test.md", {})
-        assert len(cards[0].display_text) == 200
+        assert len(cards[0].display_text) == 500
 
     def test_display_text_grouped(self, adapter):
         text = "---\nsr_adapter: mnmd\n---\n{{1::alpha}} and {{1::beta}}."
         cards = adapter.parse(text, "/test.md", {})
         assert cards[0].display_text == "{{alpha}} and {{beta}}."
+
+    def test_group_keys_unique_across_blocks(self, adapter):
+        """Group keys include block line to avoid collisions across blocks."""
+        text = "---\nsr_adapter: mnmd\n---\n{{1::a}} and {{1::b}}.\n\n{{1::x}} and {{1::y}}."
+        cards = adapter.parse(text, "/test.md", {})
+        keys = [c.key for c in cards]
+        assert len(cards) == 2
+        assert len(set(keys)) == 2  # no collisions
 
     def test_gradable_default_true(self, adapter):
         text = "---\nsr_adapter: mnmd\n---\nThe {{answer}}."
@@ -614,17 +622,17 @@ class TestScopeModifiers:
 class TestRendering:
     def test_front_blanks(self, adapter):
         result = adapter.render_front({"text": "The {{quick}} brown fox."})
-        assert "[…]" in result
+        assert "<mark>…</mark>" in result
         assert "quick" not in result
 
     def test_front_with_hint(self, adapter):
         result = adapter.render_front({"text": "The {{answer::a hint}}."})
-        assert "a hint" in result
+        assert "<mark>a hint…</mark>" in result
         assert "answer" not in result
 
     def test_front_multiple_blanks(self, adapter):
         result = adapter.render_front({"text": "{{a}} and {{b}}."})
-        assert result.count("[…]") == 2
+        assert result.count("<mark>…</mark>") == 2
 
     def test_back_highlights(self, adapter):
         result = adapter.render_back({"text": "The {{quick}} brown fox."})
@@ -685,6 +693,11 @@ class TestRendering:
         result = adapter.render_front({"text": "Para 1\n\nPara 2"})
         assert "<br>" in result
 
+    def test_list_items_preserved(self, adapter):
+        result = adapter.render_front({"text": "Symptoms:\n- Fever\n- {{Cough}}"})
+        assert "<li>" in result
+        assert "Fever" in result
+
 
 # ---------------------------------------------------------------------------
 # Integration
@@ -737,8 +750,8 @@ sr_adapter: mnmd
             # Both produce valid HTML wrapping
             assert front.startswith("<div>")
             assert back.startswith("<div>")
-            # Front has blanks, back has highlights
-            assert "[…]" in front or "[" in front
+            # Front has blanks, back has highlights — both use <mark>
+            assert "<mark>" in front
             assert "<mark>" in back
 
     def test_no_frontmatter(self, adapter):
