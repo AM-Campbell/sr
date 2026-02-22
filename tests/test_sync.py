@@ -15,14 +15,14 @@ def _make_scan_result(source_path, adapter, cards, config=None):
 def test_new_card_creation():
     conn = init_db(":memory:")
     card = Card(key="q1", content={"q": "What?", "a": "That."}, display_text="What?", tags=["t1"])
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card])]
     stats = sync_cards(conn, results)
     assert stats["new"] == 1
     assert stats["unchanged"] == 0
 
     row = conn.execute("SELECT * FROM cards WHERE card_key='q1'").fetchone()
     assert row is not None
-    assert row["adapter"] == "basic_qa"
+    assert row["adapter"] == "mnmd"
 
     state = conn.execute("SELECT status FROM card_state WHERE card_id=?", (row["id"],)).fetchone()
     assert state["status"] == "active"
@@ -35,7 +35,7 @@ def test_new_card_creation():
 def test_unchanged_card():
     conn = init_db(":memory:")
     card = Card(key="q1", content={"q": "What?"}, display_text="What?")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card])]
 
     sync_cards(conn, results)
     stats = sync_cards(conn, results)
@@ -44,17 +44,34 @@ def test_unchanged_card():
     conn.close()
 
 
+def test_unchanged_card_updates_display_text():
+    conn = init_db(":memory:")
+    card = Card(key="q1", content={"q": "What?"}, display_text="old text", source_line=1)
+    results = [_make_scan_result("/src/test.md", "mnmd", [card])]
+    sync_cards(conn, results)
+
+    card2 = Card(key="q1", content={"q": "What?"}, display_text="new text", source_line=5)
+    results2 = [_make_scan_result("/src/test.md", "mnmd", [card2])]
+    stats = sync_cards(conn, results2)
+    assert stats["unchanged"] == 1
+
+    row = conn.execute("SELECT display_text, source_line FROM cards WHERE card_key='q1'").fetchone()
+    assert row["display_text"] == "new text"
+    assert row["source_line"] == 5
+    conn.close()
+
+
 def test_content_change_replacement_chain():
     conn = init_db(":memory:")
     card_v1 = Card(key="q1", content={"q": "v1"}, display_text="v1")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card_v1])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card_v1])]
     sync_cards(conn, results)
 
     old_row = conn.execute("SELECT id FROM cards WHERE card_key='q1'").fetchone()
     old_id = old_row["id"]
 
     card_v2 = Card(key="q1", content={"q": "v2"}, display_text="v2")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card_v2])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card_v2])]
     stats = sync_cards(conn, results)
     assert stats["updated"] == 1
 
@@ -82,7 +99,7 @@ def test_deleted_source():
     conn = init_db(":memory:")
     import pathlib
     card = Card(key="q1", content={"q": "hi"}, display_text="hi")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card])]
     sync_cards(conn, results, scanned_paths=[pathlib.Path("/src/test.md")])
 
     # Now scan with empty results but same scanned_paths
@@ -94,7 +111,7 @@ def test_deleted_source():
 def test_suspension_preserved_on_unchanged():
     conn = init_db(":memory:")
     card = Card(key="q1", content={"q": "hi"}, display_text="hi")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card])]
     sync_cards(conn, results)
 
     # Manually suspend
@@ -115,7 +132,7 @@ def test_suspension_preserved_on_unchanged():
 def test_suspension_preserved_on_content_change():
     conn = init_db(":memory:")
     card_v1 = Card(key="q1", content={"q": "v1"}, display_text="v1")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card_v1])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card_v1])]
     sync_cards(conn, results)
 
     # Manually suspend
@@ -125,7 +142,7 @@ def test_suspension_preserved_on_content_change():
 
     # Change content
     card_v2 = Card(key="q1", content={"q": "v2"}, display_text="v2")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card_v2])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card_v2])]
     stats = sync_cards(conn, results)
     assert stats["updated"] == 1
 
@@ -139,7 +156,7 @@ def test_suspension_preserved_on_content_change():
 def test_tag_sync():
     conn = init_db(":memory:")
     card = Card(key="q1", content={"q": "hi"}, display_text="hi", tags=["a", "b"])
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card])]
     sync_cards(conn, results)
 
     row = conn.execute("SELECT id FROM cards WHERE card_key='q1'").fetchone()
@@ -148,7 +165,7 @@ def test_tag_sync():
 
     # Update tags
     card2 = Card(key="q1", content={"q": "hi"}, display_text="hi", tags=["b", "c"])
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card2])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card2])]
     sync_cards(conn, results)
 
     tags = {r["tag"] for r in conn.execute("SELECT tag FROM card_tags WHERE card_id=?", (row["id"],))}
@@ -184,13 +201,13 @@ def test_scheduler_hooks():
     sched = FakeScheduler()
 
     card = Card(key="q1", content={"q": "hi"}, display_text="hi")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card])]
     sync_cards(conn, results, scheduler=sched)
     assert len(sched.created) == 1
 
     # Content change triggers replacement
     card_v2 = Card(key="q1", content={"q": "v2"}, display_text="v2")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card_v2])]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card_v2])]
     sync_cards(conn, results, scheduler=sched)
     assert len(sched.replaced) == 1
     conn.close()
@@ -199,7 +216,7 @@ def test_scheduler_hooks():
 def test_new_card_suspended_source():
     conn = init_db(":memory:")
     card = Card(key="q1", content={"q": "hi"}, display_text="hi")
-    results = [_make_scan_result("/src/test.md", "basic_qa", [card], config={"suspended": True})]
+    results = [_make_scan_result("/src/test.md", "mnmd", [card], config={"suspended": True})]
     sync_cards(conn, results)
 
     row = conn.execute("SELECT id FROM cards WHERE card_key='q1'").fetchone()

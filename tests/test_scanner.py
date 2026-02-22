@@ -29,10 +29,10 @@ def test_content_hash_different():
 
 def test_scan_md_file(tmp_path):
     md = tmp_path / "test.md"
-    md.write_text("---\nsr_adapter: basic_qa\n---\nQ: hi\nA: lo\n")
+    md.write_text("---\nsr_adapter: mnmd\n---\nQ: hi\nA: lo\n")
     results = scan_sources([md], _fake_get_adapter)
     assert len(results) == 1
-    assert results[0][1] == "basic_qa"
+    assert results[0][1] == "mnmd"
     assert len(results[0][2]) == 1
 
 
@@ -46,7 +46,7 @@ def test_scan_md_file_no_adapter(tmp_path):
 def test_scan_directory_with_md(tmp_path):
     subdir = tmp_path / "notes"
     subdir.mkdir()
-    (subdir / "a.md").write_text("---\nsr_adapter: basic_qa\n---\nQ: q1\nA: a1\n")
+    (subdir / "a.md").write_text("---\nsr_adapter: mnmd\n---\nQ: q1\nA: a1\n")
     (subdir / "b.txt").write_text("not a markdown")
     results = scan_sources([subdir], _fake_get_adapter)
     assert len(results) == 1
@@ -55,13 +55,13 @@ def test_scan_directory_with_md(tmp_path):
 def test_scan_directory_recursive(tmp_path):
     sub = tmp_path / "a" / "b"
     sub.mkdir(parents=True)
-    (sub / "c.md").write_text("---\nsr_adapter: basic_qa\n---\nQ: q\nA: a\n")
+    (sub / "c.md").write_text("---\nsr_adapter: mnmd\n---\nQ: q\nA: a\n")
     results = scan_sources([tmp_path], _fake_get_adapter)
     assert len(results) == 1
 
 
 def test_scan_sr_config_dir(tmp_path):
-    (tmp_path / ".sr.config").write_text('adapter = "basic_qa"\n')
+    (tmp_path / ".sr.config").write_text('adapter = "mnmd"\n')
     (tmp_path / "file1.txt").write_text("some content")
     (tmp_path / "file2.txt").write_text("more content")
     results = scan_sources([tmp_path], _fake_get_adapter)
@@ -70,6 +70,6 @@ def test_scan_sr_config_dir(tmp_path):
 
 def test_scan_deduplicates(tmp_path):
     md = tmp_path / "test.md"
-    md.write_text("---\nsr_adapter: basic_qa\n---\nQ: hi\nA: lo\n")
+    md.write_text("---\nsr_adapter: mnmd\n---\nQ: hi\nA: lo\n")
     results = scan_sources([md, md], _fake_get_adapter)
     assert len(results) == 1

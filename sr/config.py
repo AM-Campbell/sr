@@ -1,17 +1,32 @@
 """Configuration helpers: sr directory discovery, settings, frontmatter parsing."""
 
+import os
 import pathlib
+import sys
 
 
 def get_sr_dir() -> pathlib.Path:
+    """Discover the sr directory.
+
+    Priority: SR_DIR env var > ~/.config/sr/config DIR= line.
+    No silent default — errors if neither is set.
+    """
+    env_dir = os.environ.get("SR_DIR")
+    if env_dir:
+        print(f"sr: using SR_DIR from environment: {env_dir}", file=sys.stderr)
+        return pathlib.Path(env_dir)
+
     config_path = pathlib.Path.home() / ".config" / "sr" / "config"
     if config_path.exists():
         for line in config_path.read_text().splitlines():
             line = line.strip()
             if line.startswith("DIR="):
                 return pathlib.Path(line[4:].strip())
-    default = pathlib.Path.home() / ".local" / "share" / "sr"
-    return default
+
+    print("sr: no sr directory configured.", file=sys.stderr)
+    print(f"  Set SR_DIR environment variable, or create {config_path} with:", file=sys.stderr)
+    print(f"  DIR=/path/to/your/sr", file=sys.stderr)
+    sys.exit(1)
 
 
 def load_settings(sr_dir: pathlib.Path) -> dict:

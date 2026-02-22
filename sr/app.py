@@ -62,7 +62,7 @@ class App:
         """
         if name is None:
             name = self.settings.get("scheduler", "sm2")
-        db_path = self.sr_dir / "sr.db" if self.conn is None else self.sr_dir / "sr.db"
+        db_path = self.sr_dir / "sr.db"
         self.scheduler = load_scheduler(name, self.sr_dir, db_path)
         return self.scheduler
 

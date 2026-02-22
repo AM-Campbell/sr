@@ -1,5 +1,7 @@
 """Tests for sr.config."""
 
+import pathlib
+
 from sr.config import _parse_toml_simple, parse_frontmatter, get_sr_dir, load_settings
 
 
@@ -22,9 +24,9 @@ def test_parse_toml_simple_comments_and_blanks():
 
 
 def test_parse_frontmatter_basic():
-    text = "---\nsr_adapter: basic_qa\ntags: [python, basics]\n---\nQ: hi\nA: lo"
+    text = "---\nsr_adapter: mnmd\ntags: [python, basics]\n---\nQ: hi\nA: lo"
     meta, body = parse_frontmatter(text)
-    assert meta["sr_adapter"] == "basic_qa"
+    assert meta["sr_adapter"] == "mnmd"
     assert meta["tags"] == ["python", "basics"]
     assert body.startswith("Q: hi")
 
@@ -37,7 +39,7 @@ def test_parse_frontmatter_no_frontmatter():
 
 
 def test_parse_frontmatter_unclosed():
-    text = "---\nsr_adapter: basic_qa\nno closing"
+    text = "---\nsr_adapter: mnmd\nno closing"
     meta, body = parse_frontmatter(text)
     assert meta == {}
 
@@ -54,11 +56,33 @@ def test_parse_frontmatter_boolean_values():
     assert meta["suspended"] is True
 
 
-def test_get_sr_dir_default():
-    # Should return a Path (we can't guarantee config file state)
-    import pathlib
+def test_get_sr_dir_from_env(monkeypatch, capsys):
+    """SR_DIR env var is used and a warning is printed."""
+    monkeypatch.setenv("SR_DIR", "/tmp/test-sr")
     result = get_sr_dir()
-    assert isinstance(result, pathlib.Path)
+    assert result == pathlib.Path("/tmp/test-sr")
+    captured = capsys.readouterr()
+    assert "SR_DIR" in captured.err
+
+
+def test_get_sr_dir_from_config(monkeypatch, tmp_path):
+    """Falls back to ~/.config/sr/config DIR= line."""
+    monkeypatch.delenv("SR_DIR", raising=False)
+    config_dir = tmp_path / ".config" / "sr"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config").write_text("DIR=/my/sr/dir\n")
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
+    result = get_sr_dir()
+    assert result == pathlib.Path("/my/sr/dir")
+
+
+def test_get_sr_dir_no_config_exits(monkeypatch, tmp_path):
+    """Errors if neither env var nor config file is set."""
+    import pytest
+    monkeypatch.delenv("SR_DIR", raising=False)
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
+    with pytest.raises(SystemExit):
+        get_sr_dir()
 
 
 def test_load_settings_default(tmp_path):

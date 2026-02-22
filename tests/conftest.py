@@ -12,21 +12,15 @@ from sr.db import init_db
 
 @pytest.fixture
 def tmp_sr_dir(tmp_path):
-    """Create a temporary sr directory with adapters/ and schedulers/ subdirs."""
+    """Create a temporary sr directory with schedulers/ subdir."""
     sr_dir = tmp_path / "sr_dir"
     sr_dir.mkdir()
-    (sr_dir / "adapters").mkdir()
     (sr_dir / "schedulers" / "sm2").mkdir(parents=True)
 
-    # Copy the example adapter
-    example_adapter = pathlib.Path(__file__).parent.parent / "example_sr_dir" / "adapters" / "basic_qa.py"
-    if example_adapter.exists():
-        shutil.copy(example_adapter, sr_dir / "adapters" / "basic_qa.py")
-
     # Copy the example scheduler
-    example_scheduler = pathlib.Path(__file__).parent.parent / "example_sr_dir" / "schedulers" / "sm2" / "sm2.py"
-    if example_scheduler.exists():
-        shutil.copy(example_scheduler, sr_dir / "schedulers" / "sm2" / "sm2.py")
+    bundled_scheduler = pathlib.Path(__file__).parent.parent / "schedulers" / "sm2" / "sm2.py"
+    if bundled_scheduler.exists():
+        shutil.copy(bundled_scheduler, sr_dir / "schedulers" / "sm2" / "sm2.py")
 
     return sr_dir
 
@@ -45,13 +39,6 @@ def app(tmp_sr_dir):
     a = App(sr_dir=tmp_sr_dir)
     a.init_db(":memory:")
     return a
-
-
-@pytest.fixture
-def sample_adapter(tmp_sr_dir):
-    """Load the basic_qa adapter."""
-    from sr.adapters import load_adapter
-    return load_adapter("basic_qa", tmp_sr_dir)
 
 
 @pytest.fixture

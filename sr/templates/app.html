@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sr</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap">
+<style>
+:root {
+    --bg-primary: #191919;
+    --bg-secondary: #202020;
+    --bg-tertiary: #252525;
+    --bg-hover: rgba(255,255,255,0.055);
+    --bg-active: rgba(255,255,255,0.08);
+    --border: rgb(47,47,47);
+    --border-hover: rgb(60,60,60);
+    --text-primary: rgba(255,255,255,0.81);
+    --text-secondary: rgb(155,155,155);
+    --text-tertiary: rgba(255,255,255,0.282);
+    --accent: #4f9768;
+    --accent-muted: rgba(79,151,104,0.15);
+    --red: #be524b;
+    --red-bg: rgba(190,82,75,0.12);
+    --green: #4f9768;
+    --green-bg: rgba(79,151,104,0.12);
+    --yellow: #c19138;
+    --yellow-bg: rgba(193,145,56,0.12);
+    --blue: #447acb;
+    --blue-bg: rgba(68,122,203,0.12);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg-primary); color: var(--text-primary);
+    min-height: 100vh;
+    font-size: 0.875rem;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+    overflow-x: hidden;
+}
+
+/* ── Nav ── */
+#nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 0.25rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+    z-index: 300; font-size: 0.8125rem;
+}
+#nav .nav-brand {
+    font-weight: 600; color: var(--text-primary); margin-right: 1rem;
+    font-size: 0.875rem; letter-spacing: -0.02em;
+}
+.nav-link {
+    padding: 0.35rem 0.65rem; border: none; border-radius: 4px;
+    background: none; color: var(--text-secondary); cursor: pointer;
+    font-size: 0.8125rem; font-family: inherit;
+    transition: color 120ms ease, background 120ms ease;
+}
+.nav-link:hover { color: var(--text-primary); background: var(--bg-hover); }
+.nav-link.active { color: var(--text-primary); background: var(--bg-active); }
+.view { display: none; }
+.view.active { display: block; }
+
+/* ── Toast ── */
+#toast {
+    position: fixed; bottom: 2rem; left: 50%;
+    transform: translateX(-50%) translateY(0.5rem);
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0.5rem 1rem;
+    color: var(--text-primary); font-size: 0.8125rem;
+    opacity: 0; visibility: hidden;
+    transition: opacity 200ms ease, transform 200ms ease, visibility 200ms ease;
+    z-index: 400; pointer-events: none;
+    white-space: nowrap;
+}
+#toast.visible {
+    opacity: 1; visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* ── Adapter: mnmd cloze styling ── */
+.cloze-blank {
+    display: inline-block; padding: 0.1em 0.5em;
+    border-bottom: 2px solid var(--accent); color: var(--accent);
+    font-weight: 400; min-width: 3em; text-align: center;
+}
+mark {
+    background: var(--accent-muted); color: var(--accent);
+    padding: 0.1em 0.35em; border-radius: 3px; font-weight: 500;
+}
+pre {
+    text-align: left; background: var(--bg-tertiary); padding: 1rem;
+    border-radius: 4px; overflow-x: auto; margin: 0.5rem 0;
+}
+code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em; }
+
+/* ════════════════════════════════════════════════════════════════
+   DECKS VIEW
+   ════════════════════════════════════════════════════════════════ */
+#view-decks .container {
+    max-width: 960px; margin: 0 auto; padding: 3.5rem 2rem 2.5rem;
+}
+#view-decks h1 {
+    font-weight: 300; font-size: 1.375rem; color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+#view-decks #decks-summary {
+    color: var(--text-secondary); font-size: 0.8125rem;
+    margin-bottom: 1.5rem;
+    display: flex; align-items: center; gap: 0.75rem;
+}
+#view-decks .review-all-btn {
+    padding: 0.3rem 0.75rem; border: none; border-radius: 4px;
+    background: transparent; color: var(--accent); font-size: 0.8125rem;
+    cursor: pointer; font-family: inherit; font-weight: 500;
+    transition: background 120ms ease;
+}
+#view-decks .review-all-btn:hover { background: var(--bg-hover); }
+#view-decks .deck-list { list-style: none; }
+#view-decks .deck-row {
+    display: flex; align-items: center;
+    padding: 0.5rem 0.75rem; border-radius: 4px;
+    transition: background 120ms ease; margin-bottom: 1px;
+}
+#view-decks .deck-row:hover { background: var(--bg-hover); }
+#view-decks .deck-arrow {
+    width: 1.25rem; text-align: center; cursor: pointer;
+    color: var(--text-tertiary); font-size: 0.7rem; flex-shrink: 0;
+    user-select: none; padding: 0.2rem; border-radius: 4px;
+    transition: color 120ms ease, background 120ms ease;
+}
+#view-decks .deck-arrow:hover { color: var(--text-secondary); background: var(--bg-hover); }
+#view-decks .deck-arrow.leaf { visibility: hidden; }
+#view-decks .deck-name {
+    flex: 1; cursor: pointer; font-size: 0.875rem; padding: 0 0.5rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--text-primary); transition: color 120ms ease;
+}
+#view-decks .deck-name:hover { color: var(--accent); }
+#view-decks .deck-name .ext { color: var(--text-tertiary); }
+#view-decks .deck-name.folder { font-weight: 500; }
+#view-decks .deck-meta {
+    display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0;
+}
+#view-decks .deck-stats {
+    font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap;
+}
+#view-decks .deck-progress {
+    display: flex; align-items: center; gap: 0.4rem; width: 100px;
+}
+#view-decks .progress-track {
+    flex: 1; height: 3px; background: var(--bg-tertiary);
+    border-radius: 2px; overflow: hidden;
+}
+#view-decks .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+#view-decks .due-count {
+    font-size: 0.7rem; font-weight: 500; white-space: nowrap;
+    min-width: 3rem; text-align: right;
+}
+#view-decks .due-count.has-due { color: var(--accent); }
+#view-decks .due-count.no-due { color: var(--text-tertiary); }
+#view-decks .review-btn {
+    padding: 0.2rem 0.55rem; border: none; border-radius: 4px;
+    background: transparent; color: var(--accent); font-size: 0.75rem;
+    cursor: pointer; font-family: inherit; font-weight: 500;
+    white-space: nowrap; opacity: 0;
+    transition: opacity 120ms ease, background 120ms ease;
+}
+#view-decks .deck-row:hover .review-btn { opacity: 1; }
+#view-decks .review-btn:hover { background: var(--bg-hover); }
+#view-decks .children { display: none; }
+#view-decks .children.open { display: block; }
+#view-decks #decks-loading { color: var(--text-secondary); font-size: 0.8125rem; }
+
+/* ════════════════════════════════════════════════════════════════
+   BROWSE VIEW
+   ════════════════════════════════════════════════════════════════ */
+#view-browse .container {
+    max-width: 1000px; margin: 0 auto; padding: 3.5rem 2rem 2.5rem;
+}
+#view-browse h1 {
+    font-weight: 300; font-size: 1.375rem; color: var(--text-primary);
+    margin-bottom: 1.5rem;
+}
+#view-browse #browse-search-area {
+    display: flex; justify-content: center; margin-bottom: 1.5rem;
+}
+#view-browse #browse-search {
+    width: min(600px, 100%); padding: 0.75rem 1.25rem;
+    font-size: 1rem; font-family: inherit;
+    background: var(--bg-secondary); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 4px;
+    outline: none; transition: border-color 120ms ease;
+}
+#view-browse #browse-search::placeholder { color: var(--text-tertiary); }
+#view-browse #browse-search:focus { border-color: var(--border-hover); }
+#view-browse #browse-filters {
+    display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+#view-browse #browse-status-tabs { display: flex; gap: 0; }
+#view-browse .status-tab {
+    padding: 0.4rem 0.75rem; font-size: 0.8125rem;
+    background: none; border: none; color: var(--text-secondary);
+    cursor: pointer; border-bottom: 2px solid transparent;
+    transition: color 120ms ease, border-color 120ms ease;
+    font-family: inherit;
+}
+#view-browse .status-tab:hover { color: var(--text-primary); }
+#view-browse .status-tab.active { color: var(--text-primary); border-bottom-color: var(--accent); }
+#view-browse .filter-select {
+    padding: 0.3rem 0.5rem; font-size: 0.8125rem;
+    background: var(--bg-secondary); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 4px;
+    font-family: inherit; cursor: pointer; outline: none;
+    transition: border-color 120ms ease; appearance: none;
+    padding-right: 1.5rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239b9b9b'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 0.5rem center;
+}
+#view-browse .filter-select:focus { border-color: var(--border-hover); }
+#view-browse .filter-select option { background: var(--bg-secondary); color: var(--text-primary); }
+#view-browse #browse-total-count {
+    margin-left: auto; font-size: 0.75rem; color: var(--text-secondary);
+}
+#view-browse #browse-card-list { margin-bottom: 1rem; }
+#view-browse .card-row {
+    display: flex; align-items: flex-start; gap: 1rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    cursor: pointer; transition: background 120ms ease;
+}
+#view-browse .card-row:hover { background: var(--bg-hover); }
+#view-browse .card-row.status-active { border-left-color: var(--green); }
+#view-browse .card-row.status-inactive { border-left-color: var(--red); }
+#view-browse .card-row-content { flex: 1; min-width: 0; }
+#view-browse .card-row-text {
+    color: var(--text-primary); font-size: 0.9rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4;
+}
+#view-browse .card-row-source {
+    color: var(--text-secondary); font-size: 0.8rem; margin-top: 0.15rem;
+}
+#view-browse .card-row-pills {
+    display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center; flex-shrink: 0;
+}
+#view-browse .pill-tag {
+    padding: 0.1rem 0.45rem; font-size: 0.6875rem; border-radius: 3px;
+    font-weight: 500; background: var(--green-bg); color: var(--green);
+}
+#view-browse .pill-flag {
+    padding: 0.1rem 0.45rem; font-size: 0.6875rem; border-radius: 3px;
+    font-weight: 500; background: var(--yellow-bg); color: var(--yellow);
+}
+#view-browse #browse-pagination {
+    display: flex; gap: 1rem; align-items: center; justify-content: center;
+    margin-top: 1rem; color: var(--text-secondary); font-size: 0.8125rem;
+}
+#view-browse #browse-pagination button {
+    padding: 0.35rem 0.75rem; border: none; border-radius: 4px;
+    background: transparent; color: var(--text-secondary);
+    cursor: pointer; font-size: 0.8125rem; font-family: inherit;
+    transition: background 120ms ease;
+}
+#view-browse #browse-pagination button:hover { background: var(--bg-hover); }
+#view-browse #browse-pagination button:disabled { opacity: 0.3; cursor: default; }
+#view-browse #browse-pagination button:disabled:hover { background: transparent; }
+
+/* Detail overlay */
+#browse-detail-overlay {
+    position: fixed; inset: 0;
+    background: var(--bg-primary);
+    transform: translateX(100%);
+    transition: transform 250ms var(--ease-out);
+    z-index: 350;
+    display: flex; flex-direction: column;
+}
+#browse-detail-overlay.open { transform: translateX(0); }
+#browse-overlay-header {
+    flex-shrink: 0; display: flex; justify-content: flex-start;
+    padding: 1rem 1.5rem 0;
+}
+#browse-overlay-close {
+    background: none; border: none; color: var(--text-secondary);
+    font-size: 1.5rem; cursor: pointer; padding: 0.5rem;
+    border-radius: 4px; line-height: 1; transition: background 120ms ease;
+}
+#browse-overlay-close:hover { background: var(--bg-hover); }
+#browse-overlay-scroll { flex: 1; overflow-y: auto; }
+#browse-overlay-content { max-width: 640px; margin: 0 auto; padding: 1rem 2rem 3rem; }
+#view-browse .section { margin-bottom: 1.5rem; }
+#view-browse .section-label {
+    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-secondary); margin-bottom: 0.5rem;
+}
+#view-browse .card-preview {
+    background: var(--bg-secondary); padding: 1.25rem; border-radius: 4px;
+    font-size: 0.95rem; line-height: 1.6; text-align: left;
+    cursor: pointer; transition: background 120ms ease;
+    border: 1px solid var(--border); height: 10rem; overflow-y: auto;
+}
+#view-browse .card-preview:hover { background: var(--bg-hover); }
+#view-browse .card-preview pre { text-align: left; background: var(--bg-tertiary); padding: 0.8rem; border-radius: 4px; overflow-x: auto; }
+#view-browse .card-preview code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em; }
+#view-browse .detail-row {
+    font-size: 0.875rem; color: var(--text-primary);
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+}
+#view-browse .detail-btn {
+    padding: 0.3rem 0.65rem; border: none; border-radius: 4px;
+    background: transparent; color: var(--text-secondary);
+    cursor: pointer; font-size: 0.8125rem; font-family: inherit;
+    transition: background 120ms ease;
+}
+#view-browse .detail-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+#view-browse .detail-btn.active-flag { color: var(--yellow); }
+#view-browse .detail-btn.active-tag { color: var(--green); }
+#view-browse .status-badge {
+    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px;
+    font-size: 0.75rem; font-weight: 500;
+}
+#view-browse .status-badge.active { background: var(--green-bg); color: var(--green); }
+#view-browse .status-badge.inactive { background: var(--red-bg); color: var(--red); }
+#view-browse .review-entry {
+    font-size: 0.8125rem; color: var(--text-secondary); padding: 0.25rem 0;
+}
+#view-browse .review-entry .grade-mark { font-weight: 500; }
+#view-browse .review-entry .grade-correct { color: var(--green); }
+#view-browse .review-entry .grade-wrong { color: var(--red); }
+
+/* ════════════════════════════════════════════════════════════════
+   REVIEW VIEW
+   ════════════════════════════════════════════════════════════════ */
+#view-review { min-height: 100vh; }
+#review-progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px;
+    background: var(--accent); width: 0%;
+    transition: width 0.4s ease;
+    z-index: 200;
+    box-shadow: 0 0 8px rgba(79,151,104,0.4);
+}
+#review-progress-bar.complete {
+    animation: pulse-bar 0.6s ease;
+}
+@keyframes pulse-bar {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+#review-menu-btn {
+    position: fixed; top: 3.25rem; right: 1rem;
+    background: none; border: none; color: var(--text-secondary);
+    font-size: 1.25rem; cursor: pointer; padding: 0.5rem;
+    border-radius: 4px; letter-spacing: 0.1em;
+    transition: background 120ms ease;
+    z-index: 100; line-height: 1;
+}
+#review-menu-btn:hover { background: var(--bg-hover); }
+#review-palette {
+    display: none;
+    position: fixed; top: 5.75rem; right: 1rem;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 150; min-width: 180px; overflow: hidden;
+}
+#review-palette.open { display: block; }
+#view-review .palette-item {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.5rem 0.875rem; cursor: pointer;
+    color: var(--text-primary); font-size: 0.8125rem;
+    transition: background 120ms ease;
+}
+#view-review .palette-item:hover { background: var(--bg-hover); }
+#view-review .palette-item kbd {
+    font-family: 'Inter', sans-serif; font-size: 0.6875rem;
+    color: var(--text-tertiary); margin-left: auto;
+    background: var(--bg-tertiary); padding: 0.1rem 0.35rem;
+    border-radius: 3px; border: 1px solid var(--border);
+}
+#review-stage {
+    max-width: 38rem; width: 100%; margin: 0 auto;
+    padding: 25vh 2rem 2rem; text-align: left;
+}
+#review-card-content {
+    font-weight: 300; font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+    color: var(--text-primary); line-height: 1.7; width: 100%;
+}
+#review-card-content:has(pre) { font-size: 0.95rem; }
+#view-review .flip-hint {
+    color: var(--text-tertiary); font-size: 0.75rem;
+    margin-top: 2rem; letter-spacing: 0.06em;
+    animation: breathe 3s ease-in-out infinite;
+    visibility: visible;
+}
+#view-review .flip-hint.hidden { visibility: hidden; }
+@keyframes breathe {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.7; }
+}
+#review-bottom-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 0 2rem 2.5rem;
+    pointer-events: none; z-index: 50;
+}
+#review-bottom-bar > * { pointer-events: auto; }
+#review-autograde-result {
+    padding: 0.45rem 1rem; margin-bottom: 0.5rem;
+    border-radius: 4px; font-weight: 500; font-size: 0.8125rem; text-align: center;
+    opacity: 0; visibility: hidden; transition: opacity 150ms ease;
+}
+#review-autograde-result.visible { opacity: 1; visibility: visible; }
+#review-autograde-result.correct { background: var(--green-bg); color: var(--green); }
+#review-autograde-result.wrong { background: var(--red-bg); color: var(--red); }
+#review-controls {
+    display: flex; gap: 0.75rem; justify-content: center;
+    margin-bottom: 0.5rem;
+    opacity: 0; visibility: hidden;
+    transition: opacity 150ms ease 100ms;
+}
+#review-controls.visible { opacity: 1; visibility: visible; }
+#view-review .grade-pill {
+    padding: 0.5rem 1.5rem; border-radius: 4px;
+    font-size: 0.8125rem; cursor: pointer; font-weight: 500;
+    border: none; display: inline-flex; align-items: center; gap: 0.5rem;
+    transition: background 120ms ease;
+}
+#view-review .grade-pill kbd {
+    font-family: 'Inter', sans-serif; font-size: 0.6875rem; opacity: 0.5;
+}
+#view-review .grade-pill:active { transform: scale(0.97); }
+#review-btn-again { background: var(--red-bg); color: var(--red); }
+#review-btn-again:hover { background: rgba(190,82,75,0.2); }
+#review-btn-good { background: var(--green-bg); color: var(--green); }
+#review-btn-good:hover { background: rgba(79,151,104,0.2); }
+#review-btn-next {
+    display: none; padding: 0.5rem 1.5rem; border-radius: 4px;
+    font-size: 0.8125rem; cursor: pointer; font-weight: 500;
+    background: var(--accent-muted); color: var(--accent); border: none;
+    transition: background 120ms ease;
+}
+#review-btn-next:hover { background: rgba(79,151,104,0.25); }
+#review-feedback-row {
+    display: flex; gap: 0.25rem; justify-content: center;
+    opacity: 0; visibility: hidden;
+    transition: opacity 150ms ease 150ms;
+}
+#review-feedback-row.visible { opacity: 1; visibility: visible; }
+#view-review .fb-btn {
+    padding: 0.35rem 0.6rem; border: none; border-radius: 4px;
+    background: transparent; color: var(--text-secondary); font-size: 0.75rem;
+    cursor: pointer; transition: color 120ms ease, background 120ms ease;
+}
+#view-review .fb-btn:hover { background: var(--bg-hover); }
+#view-review .fb-btn.selected { color: var(--accent); }
+#view-review .fb-sep { color: var(--text-tertiary); font-size: 0.75rem; line-height: 1; padding: 0.35rem 0; }
+#review-done-screen {
+    display: none; flex-direction: column;
+    max-width: 38rem; width: 100%; margin: 0 auto;
+    padding: 25vh 2rem 2rem;
+}
+#review-done-screen .done-title {
+    font-weight: 300; font-size: 1.375rem; color: var(--text-primary);
+}
+#review-done-screen .done-sub {
+    color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;
+}
+#review-done-screen .done-back {
+    margin-top: 1rem; padding: 0.4rem 0.75rem; border: none; border-radius: 4px;
+    background: transparent; color: var(--accent); font-size: 0.8125rem;
+    cursor: pointer; font-family: inherit; font-weight: 500;
+    transition: background 120ms ease; width: fit-content;
+}
+#review-done-screen .done-back:hover { background: var(--bg-hover); }
+#review-flag-indicator {
+    position: fixed; top: 3.25rem; left: 1rem;
+    font-size: 0.75rem; color: var(--yellow);
+    opacity: 0; visibility: hidden;
+    transition: opacity 150ms ease;
+    z-index: 100; letter-spacing: 0.04em;
+}
+#review-flag-indicator.visible { opacity: 1; visibility: visible; }
+#review-error-msg {
+    color: var(--red); margin-top: 1rem; font-size: 0.8125rem;
+    max-width: 38rem; width: 100%;
+    margin-left: auto; margin-right: auto;
+    padding: 0 2rem; display: none;
+}
+</style>
+</head>
+<body>
+
+<nav id="nav">
+    <span class="nav-brand">sr</span>
+    <button class="nav-link" onclick="showView('decks')">Decks</button>
+    <button class="nav-link" onclick="showView('browse')">Browse</button>
+</nav>
+
+<div id="toast"></div>
+
+<!-- ════════ DECKS VIEW ════════ -->
+<div id="view-decks" class="view">
+    <div class="container">
+        <h1>Library</h1>
+        <div id="decks-summary"></div>
+        <div id="decks-loading">Loading...</div>
+        <ul class="deck-list" id="decks-tree-root"></ul>
+    </div>
+</div>
+
+<!-- ════════ BROWSE VIEW ════════ -->
+<div id="view-browse" class="view">
+    <div class="container">
+        <h1>Cards</h1>
+        <div id="browse-search-area">
+            <input id="browse-search" type="text" placeholder="Search cards..." oninput="browseView.debounceSearch()">
+        </div>
+        <div id="browse-filters">
+            <div id="browse-status-tabs">
+                <button class="status-tab" data-status="" onclick="browseView.setStatus(this)">All</button>
+                <button class="status-tab active" data-status="active" onclick="browseView.setStatus(this)">Active</button>
+                <button class="status-tab" data-status="inactive" onclick="browseView.setStatus(this)">Suspended</button>
+            </div>
+            <select id="browse-filter-tag" class="filter-select" onchange="browseView.setTag()">
+                <option value="">All tags</option>
+            </select>
+            <select id="browse-filter-flag" class="filter-select" onchange="browseView.setFlag()">
+                <option value="">All flags</option>
+            </select>
+            <span id="browse-total-count"></span>
+        </div>
+        <div id="browse-card-list"></div>
+        <div id="browse-pagination">
+            <button id="browse-prev-btn" onclick="browseView.prevPage()" disabled>&larr; Prev</button>
+            <span id="browse-page-info"></span>
+            <button id="browse-next-btn" onclick="browseView.nextPage()" disabled>Next &rarr;</button>
+        </div>
+    </div>
+    <div id="browse-detail-overlay">
+        <div id="browse-overlay-header">
+            <button id="browse-overlay-close" onclick="browseView.closeDetail()">&times;</button>
+        </div>
+        <div id="browse-overlay-scroll">
+            <div id="browse-overlay-content"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════ REVIEW VIEW ════════ -->
+<div id="view-review" class="view">
+    <div id="review-progress-bar"></div>
+    <div id="review-flag-indicator">flagged</div>
+    <button id="review-menu-btn" onclick="reviewView.togglePalette()">···</button>
+    <div id="review-palette">
+        <div class="palette-item" onclick="reviewView.toggleFlag()">Flag<kbd>f</kbd></div>
+        <div class="palette-item" onclick="reviewView.editCard()">Edit source<kbd>e</kbd></div>
+        <div class="palette-item" onclick="reviewView.suspendCard()">Suspend<kbd>s</kbd></div>
+        <div class="palette-item" onclick="reviewView.undo()">Undo<kbd>z</kbd></div>
+    </div>
+    <main id="review-stage">
+        <div id="review-card-content">Loading...</div>
+        <div class="flip-hint" id="review-flip-hint">space</div>
+    </main>
+    <div id="review-bottom-bar">
+        <div id="review-autograde-result"></div>
+        <div id="review-controls">
+            <button class="grade-pill" id="review-btn-again" onclick="reviewView.grade(0)">Again<kbd>1</kbd></button>
+            <button class="grade-pill" id="review-btn-good" onclick="reviewView.grade(1)">Good<kbd>2</kbd></button>
+            <button id="review-btn-next" onclick="reviewView.submitAutoGrade()">Next</button>
+        </div>
+        <div id="review-feedback-row">
+            <button class="fb-btn" data-fb="too_hard" onclick="reviewView.setFeedback('too_hard')">too hard</button>
+            <span class="fb-sep">&middot;</span>
+            <button class="fb-btn" data-fb="just_right" onclick="reviewView.setFeedback('just_right')">just right</button>
+            <span class="fb-sep">&middot;</span>
+            <button class="fb-btn" data-fb="too_easy" onclick="reviewView.setFeedback('too_easy')">too easy</button>
+        </div>
+    </div>
+    <div id="review-done-screen">
+        <div class="done-title">done.</div>
+        <div class="done-sub" id="review-done-count"></div>
+        <button class="done-back" onclick="showView('decks')">Back to decks</button>
+    </div>
+    <div id="review-error-msg"></div>
+</div>
+
+<script>
+/* ── Shared helpers ── */
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+async function api(method, path, body, token) {
+    const opts = {method, headers: {"Content-Type": "application/json"}};
+    if (token) opts.headers["X-Session-Token"] = token;
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(path, opts);
+    if (!r.ok) {
+        const t = await r.text();
+        throw new Error(t);
+    }
+    return r.json();
+}
+
+let toastTimer = null;
+function showToast(msg) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("visible");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("visible"), 1500);
+}
+
+/* ── View switching ── */
+function showView(name) {
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.querySelectorAll(".nav-link").forEach(l => l.classList.remove("active"));
+    const view = document.getElementById("view-" + name);
+    if (view) view.classList.add("active");
+    const links = document.querySelectorAll(".nav-link");
+    links.forEach(l => { if (l.textContent.toLowerCase() === name) l.classList.add("active"); });
+
+    // Show/hide nav in review mode
+    document.getElementById("nav").style.display = name === "review" ? "none" : "";
+
+    location.hash = name;
+    if (name === "decks") decksView.init();
+    else if (name === "browse") browseView.init();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   DECKS VIEW
+   ════════════════════════════════════════════════════════════════ */
+const decksView = {
+    loaded: false,
+
+    init() {
+        if (!this.loaded) this.loadTree();
+    },
+
+    countTree(nodes) {
+        let cards = 0, due = 0, sources = 0;
+        nodes.forEach(n => {
+            if (n.is_leaf) { cards += n.active; due += n.due; sources++; }
+            else if (n.children) {
+                const sub = this.countTree(n.children);
+                cards += sub.cards; due += sub.due; sources += sub.sources;
+            }
+        });
+        return { cards, due, sources };
+    },
+
+    async loadTree() {
+        try {
+            const tree = await api("GET", "/api/decks/tree");
+            document.getElementById("decks-loading").style.display = "none";
+            const totals = this.countTree(tree);
+            const summaryEl = document.getElementById("decks-summary");
+            let text = totals.cards + " cards across " + totals.sources + " sources";
+            if (totals.due > 0) text += " \u00b7 " + totals.due + " due";
+            summaryEl.innerHTML = "<span>" + text + "</span>";
+            if (totals.due > 0) {
+                summaryEl.innerHTML += '<button class="review-all-btn" onclick="decksView.startReview(\'\')">Review all due</button>';
+            }
+            const root = document.getElementById("decks-tree-root");
+            root.innerHTML = "";
+            this.renderTree(tree, root, 0);
+            this.loaded = true;
+        } catch(e) {
+            document.getElementById("decks-loading").style.display = "none";
+            showToast(e.message);
+        }
+    },
+
+    renderTree(nodes, parent, depth) {
+        nodes.forEach(node => {
+            const li = document.createElement("li");
+            const row = document.createElement("div");
+            row.className = "deck-row";
+            row.style.paddingLeft = (0.75 + depth * 1.25) + "rem";
+
+            const arrow = document.createElement("span");
+            arrow.className = "deck-arrow" + (node.is_leaf ? " leaf" : "");
+            arrow.textContent = node.is_leaf ? "" : "\u25B6";
+
+            const name = document.createElement("span");
+            name.className = "deck-name" + (node.is_leaf ? "" : " folder");
+            if (node.is_leaf) {
+                const parts = node.name.split(".");
+                if (parts.length > 1) {
+                    const ext = parts.pop();
+                    name.innerHTML = esc(parts.join(".")) + '<span class="ext">.' + esc(ext) + "</span>";
+                } else {
+                    name.textContent = node.name;
+                }
+            } else {
+                name.textContent = node.name;
+            }
+
+            const meta = document.createElement("div");
+            meta.className = "deck-meta";
+            const stats = document.createElement("span");
+            stats.className = "deck-stats";
+            stats.textContent = node.active + " cards";
+            const progress = document.createElement("div");
+            progress.className = "deck-progress";
+            const track = document.createElement("div");
+            track.className = "progress-track";
+            const fill = document.createElement("div");
+            fill.className = "progress-fill";
+            const reviewed = node.active > 0 ? Math.max(0, node.active - node.due) : 0;
+            const pct = node.active > 0 ? (reviewed / node.active * 100) : 100;
+            fill.style.width = pct + "%";
+            track.appendChild(fill);
+            const dueEl = document.createElement("span");
+            dueEl.className = "due-count " + (node.due > 0 ? "has-due" : "no-due");
+            dueEl.textContent = node.due + " due";
+            progress.appendChild(track);
+            progress.appendChild(dueEl);
+            const btn = document.createElement("button");
+            btn.className = "review-btn";
+            btn.textContent = "Review";
+            btn.onclick = (e) => { e.stopPropagation(); this.startReview(node.path); };
+            meta.appendChild(stats);
+            meta.appendChild(progress);
+            meta.appendChild(btn);
+
+            row.appendChild(arrow);
+            row.appendChild(name);
+            row.appendChild(meta);
+            li.appendChild(row);
+
+            if (!node.is_leaf && node.children && node.children.length > 0) {
+                const childUl = document.createElement("ul");
+                childUl.className = "children deck-list";
+                this.renderTree(node.children, childUl, depth + 1);
+                li.appendChild(childUl);
+                const toggle = () => {
+                    const open = childUl.classList.toggle("open");
+                    arrow.textContent = open ? "\u25BC" : "\u25B6";
+                };
+                arrow.onclick = (e) => { e.stopPropagation(); toggle(); };
+                name.onclick = (e) => { e.stopPropagation(); toggle(); };
+            } else if (!node.is_leaf) {
+                name.onclick = (e) => { e.stopPropagation(); this.startReview(node.path); };
+            }
+
+            if (node.is_leaf) {
+                name.onclick = (e) => { e.stopPropagation(); this.startReview(node.path); };
+            }
+
+            parent.appendChild(li);
+        });
+    },
+
+    async startReview(path) {
+        try {
+            const data = await api("POST", "/api/review/start", {path: path || ""});
+            reviewView.start(data.session_token);
+        } catch(e) { showToast(e.message); }
+    }
+};
+
+/* ════════════════════════════════════════════════════════════════
+   BROWSE VIEW
+   ════════════════════════════════════════════════════════════════ */
+const browseView = {
+    offset: 0,
+    limit: 50,
+    totalCards: 0,
+    searchTimeout: null,
+    currentStatus: "active",
+    currentTag: "",
+    currentFlag: "",
+    previewState: { front: "", back: "", side: "front" },
+    filtersLoaded: false,
+
+    init() {
+        if (!this.filtersLoaded) this.loadFilters();
+        this.fetchCards();
+    },
+
+    async loadFilters() {
+        try {
+            const [tags, flags] = await Promise.all([
+                api("GET", "/api/browse/tags"),
+                api("GET", "/api/browse/flags")
+            ]);
+            const tagSel = document.getElementById("browse-filter-tag");
+            tagSel.innerHTML = '<option value="">All tags</option>';
+            tags.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; tagSel.appendChild(o); });
+            const flagSel = document.getElementById("browse-filter-flag");
+            flagSel.innerHTML = '<option value="">All flags</option>';
+            flags.forEach(f => { const o = document.createElement("option"); o.value = f; o.textContent = f; flagSel.appendChild(o); });
+            this.filtersLoaded = true;
+        } catch(e) { console.error(e); }
+    },
+
+    setStatus(el) {
+        document.querySelectorAll("#view-browse .status-tab").forEach(t => t.classList.remove("active"));
+        el.classList.add("active");
+        this.currentStatus = el.dataset.status;
+        this.offset = 0;
+        this.fetchCards();
+    },
+
+    setTag() {
+        this.currentTag = document.getElementById("browse-filter-tag").value;
+        this.offset = 0;
+        this.fetchCards();
+    },
+
+    setFlag() {
+        this.currentFlag = document.getElementById("browse-filter-flag").value;
+        this.offset = 0;
+        this.fetchCards();
+    },
+
+    debounceSearch() {
+        clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => { this.offset = 0; this.fetchCards(); }, 300);
+    },
+
+    async fetchCards() {
+        const params = new URLSearchParams();
+        if (this.currentStatus) params.set("status", this.currentStatus);
+        if (this.currentTag) params.set("tag", this.currentTag);
+        if (this.currentFlag) params.set("flag", this.currentFlag);
+        const q = document.getElementById("browse-search").value;
+        if (q) params.set("q", q);
+        params.set("offset", this.offset);
+        params.set("limit", this.limit);
+        try {
+            const data = await api("GET", "/api/browse/cards?" + params.toString());
+            this.totalCards = data.total;
+            document.getElementById("browse-total-count").textContent = this.totalCards + " cards";
+            this.renderCards(data.cards);
+            this.updatePagination();
+        } catch(e) { console.error(e); }
+    },
+
+    renderCards(cards) {
+        const list = document.getElementById("browse-card-list");
+        list.innerHTML = "";
+        cards.forEach(c => {
+            const row = document.createElement("div");
+            row.className = "card-row status-" + c.status;
+            row.onclick = () => this.showDetail(c.id);
+            const content = document.createElement("div");
+            content.className = "card-row-content";
+            const text = document.createElement("div");
+            text.className = "card-row-text";
+            text.textContent = c.display_text || "(no text)";
+            const source = document.createElement("div");
+            source.className = "card-row-source";
+            source.textContent = c.source_path.split("/").pop();
+            content.appendChild(text);
+            content.appendChild(source);
+            const pills = document.createElement("div");
+            pills.className = "card-row-pills";
+            (c.tags || []).forEach(t => {
+                const pill = document.createElement("span");
+                pill.className = "pill-tag"; pill.textContent = t;
+                pills.appendChild(pill);
+            });
+            (c.flags || []).forEach(f => {
+                const pill = document.createElement("span");
+                pill.className = "pill-flag"; pill.textContent = f;
+                pills.appendChild(pill);
+            });
+            row.appendChild(content);
+            row.appendChild(pills);
+            list.appendChild(row);
+        });
+    },
+
+    updatePagination() {
+        const maxPage = Math.max(1, Math.ceil(this.totalCards / this.limit));
+        const curPage = Math.floor(this.offset / this.limit) + 1;
+        document.getElementById("browse-page-info").textContent = "Page " + curPage + " of " + maxPage;
+        document.getElementById("browse-prev-btn").disabled = this.offset === 0;
+        document.getElementById("browse-next-btn").disabled = this.offset + this.limit >= this.totalCards;
+    },
+
+    prevPage() { this.offset = Math.max(0, this.offset - this.limit); this.fetchCards(); },
+    nextPage() { this.offset += this.limit; this.fetchCards(); },
+
+    flipPreview() {
+        this.previewState.side = this.previewState.side === "front" ? "back" : "front";
+        document.getElementById("browse-card-preview").innerHTML = this.previewState[this.previewState.side];
+        document.getElementById("browse-preview-label").textContent = this.previewState.side === "front" ? "Front" : "Back";
+    },
+
+    async showDetail(cardId) {
+        try {
+            const c = await api("GET", "/api/browse/cards/" + cardId);
+            this.previewState = {
+                front: c.front_html || esc(c.display_text || ""),
+                back: c.back_html || "",
+                side: "front"
+            };
+            const statusCls = c.status === "active" ? "active" : "inactive";
+            const toggleLabel = c.status === "active" ? "Suspend" : "Activate";
+            const flagBtns = (c.flags || []).map(f =>
+                '<button class="detail-btn active-flag" onclick="browseView.removeFlag(' + c.id + ",'" + esc(f.flag) + "')" + '">' + esc(f.flag) + " &times;</button>"
+            ).join("");
+            const tagBtns = (c.tags || []).map(t =>
+                '<button class="detail-btn active-tag" onclick="browseView.removeTag(' + c.id + ",'" + esc(t) + "')" + '">' + esc(t) + " &times;</button>"
+            ).join("");
+            const reviews = (c.reviews || []).map(r => {
+                const gradeCls = r.grade === 1 ? "grade-correct" : "grade-wrong";
+                const gradeMark = r.grade === 1 ? "correct" : "again";
+                const fb = r.feedback ? " (" + r.feedback + ")" : "";
+                return '<div class="review-entry">' + r.timestamp + ' &mdash; <span class="grade-mark ' + gradeCls + '">' + gradeMark + "</span>" + fb + "</div>";
+            }).join("");
+
+            document.getElementById("browse-overlay-content").innerHTML =
+                '<div class="section">' +
+                    '<div class="section-label" style="display:flex;justify-content:space-between;align-items:center;">' +
+                        '<span id="browse-preview-label">Front</span>' +
+                        '<span style="font-size:0.6875rem;color:var(--text-tertiary);">click to flip</span>' +
+                    '</div>' +
+                    '<div class="card-preview" id="browse-card-preview" onclick="browseView.flipPreview()">' +
+                        (c.front_html || esc(c.display_text || "")) +
+                    '</div>' +
+                '</div>' +
+                '<div class="section">' +
+                    '<div class="section-label">Source</div>' +
+                    '<div class="detail-row">' +
+                        '<span>' + esc(c.source_path) + '</span>' +
+                        '<button class="detail-btn" onclick="browseView.editCard(' + c.id + ')">Edit</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="section">' +
+                    '<div class="section-label">Status</div>' +
+                    '<div class="detail-row">' +
+                        '<span class="status-badge ' + statusCls + '">' + c.status + '</span>' +
+                        '<button class="detail-btn" onclick="browseView.toggleStatus(' + c.id + ",'" + c.status + "')" + '">' + toggleLabel + '</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="section">' +
+                    '<div class="section-label">Tags</div>' +
+                    '<div class="detail-row">' +
+                        tagBtns +
+                        '<button class="detail-btn" onclick="browseView.promptAddTag(' + c.id + ')">+ Add</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="section">' +
+                    '<div class="section-label">Flags</div>' +
+                    '<div class="detail-row">' +
+                        flagBtns +
+                        '<button class="detail-btn" onclick="browseView.promptAddFlag(' + c.id + ')">+ Add</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="section">' +
+                    '<div class="section-label">Review History</div>' +
+                    (reviews || '<div style="font-size:0.8125rem;color:var(--text-tertiary);">No reviews yet.</div>') +
+                '</div>';
+            document.getElementById("browse-overlay-scroll").scrollTop = 0;
+            document.getElementById("browse-detail-overlay").classList.add("open");
+        } catch(e) { console.error(e); }
+    },
+
+    closeDetail() {
+        document.getElementById("browse-detail-overlay").classList.remove("open");
+    },
+
+    async toggleStatus(cardId, current) {
+        const newStatus = current === "active" ? "inactive" : "active";
+        try {
+            await api("POST", "/api/browse/cards/" + cardId + "/status", {status: newStatus});
+            this.showDetail(cardId);
+            this.fetchCards();
+        } catch(e) { console.error(e); }
+    },
+
+    async removeFlag(cardId, flag) {
+        try {
+            await api("POST", "/api/browse/cards/" + cardId + "/unflag", {flag: flag});
+            this.showDetail(cardId);
+            this.fetchCards();
+        } catch(e) { console.error(e); }
+    },
+
+    async removeTag(cardId, tag) {
+        try {
+            await api("POST", "/api/browse/cards/" + cardId + "/untag", {tag: tag});
+            this.showDetail(cardId);
+            this.fetchCards();
+        } catch(e) { console.error(e); }
+    },
+
+    async promptAddTag(cardId) {
+        const tag = prompt("Tag name:");
+        if (!tag) return;
+        try {
+            await api("POST", "/api/browse/cards/" + cardId + "/tag", {tag: tag});
+            this.showDetail(cardId);
+            this.fetchCards();
+        } catch(e) { console.error(e); }
+    },
+
+    async editCard(cardId) {
+        try {
+            await api("POST", "/api/browse/cards/" + cardId + "/edit");
+        } catch(e) { console.error(e); }
+    },
+
+    async promptAddFlag(cardId) {
+        const flag = prompt("Flag name (e.g. edit_later, needs_work):");
+        if (!flag) return;
+        const note = prompt("Note (optional):");
+        try {
+            await api("POST", "/api/browse/cards/" + cardId + "/flag", {flag: flag, note: note || null});
+            this.showDetail(cardId);
+            this.fetchCards();
+        } catch(e) { console.error(e); }
+    }
+};
+
+/* ════════════════════════════════════════════════════════════════
+   REVIEW VIEW
+   ════════════════════════════════════════════════════════════════ */
+const reviewView = {
+    sessionToken: null,
+    currentFeedback: null,
+    hasFlipped: false,
+    hasCard: false,
+    currentGradable: true,
+    autoGradeResult: null,
+    currentFlags: [],
+    statsReviewed: 0,
+    statsRemaining: 0,
+
+    start(token) {
+        this.sessionToken = token;
+        this.hasFlipped = false;
+        this.hasCard = false;
+        this.autoGradeResult = null;
+        this.currentFeedback = null;
+        this.currentFlags = [];
+        this.statsReviewed = 0;
+        this.statsRemaining = 0;
+        showView("review");
+        // Force nav hide since showView sets it
+        document.getElementById("nav").style.display = "none";
+        this.loadNext();
+    },
+
+    updateProgressBar() {
+        const total = this.statsReviewed + this.statsRemaining;
+        const pct = total > 0 ? (this.statsReviewed / total * 100) : 0;
+        document.getElementById("review-progress-bar").style.width = pct + "%";
+    },
+
+    togglePalette() {
+        document.getElementById("review-palette").classList.toggle("open");
+    },
+
+    closePalette() {
+        document.getElementById("review-palette").classList.remove("open");
+    },
+
+    hideControls() {
+        document.getElementById("review-controls").classList.remove("visible");
+        document.getElementById("review-feedback-row").classList.remove("visible");
+        document.getElementById("review-autograde-result").classList.remove("visible");
+    },
+
+    updateFlagIndicator() {
+        const isFlagged = this.currentFlags.some(f => f.flag === "edit_later");
+        document.getElementById("review-flag-indicator").classList.toggle("visible", isFlagged);
+        const flagItem = document.querySelector("#review-palette .palette-item");
+        if (flagItem) flagItem.firstChild.textContent = isFlagged ? "Unflag" : "Flag";
+    },
+
+    showControls(nextOnly) {
+        if (nextOnly) {
+            document.getElementById("review-btn-again").style.display = "none";
+            document.getElementById("review-btn-good").style.display = "none";
+            document.getElementById("review-btn-next").style.display = "";
+        } else {
+            document.getElementById("review-btn-again").style.display = "";
+            document.getElementById("review-btn-good").style.display = "";
+            document.getElementById("review-btn-next").style.display = "none";
+        }
+        document.getElementById("review-controls").classList.add("visible");
+        document.getElementById("review-feedback-row").classList.add("visible");
+    },
+
+    async loadNext() {
+        this.closePalette();
+        try {
+            const data = await api("GET", "/api/review/next", null, this.sessionToken);
+            if (data.done) {
+                this.statsReviewed = data.session_stats.reviewed;
+                this.statsRemaining = 0;
+                this.updateProgressBar();
+                document.getElementById("review-progress-bar").classList.add("complete");
+                document.getElementById("review-stage").style.display = "none";
+                document.getElementById("review-menu-btn").style.display = "none";
+                this.hideControls();
+                document.getElementById("review-done-screen").style.display = "flex";
+                document.getElementById("review-done-count").textContent = this.statsReviewed + " cards reviewed";
+                this.hasCard = false;
+                return;
+            }
+            this.currentGradable = data.gradable;
+            this.autoGradeResult = null;
+            this.currentFlags = data.flags || [];
+            this.statsReviewed = data.session_stats.reviewed;
+            this.statsRemaining = data.session_stats.remaining;
+            this.updateProgressBar();
+
+            document.getElementById("review-card-content").innerHTML = data.front_html;
+            this.hideControls();
+            this.updateFlagIndicator();
+            document.getElementById("review-flip-hint").classList.remove("hidden");
+            document.getElementById("review-stage").style.display = "block";
+            document.getElementById("review-done-screen").style.display = "none";
+            document.getElementById("review-menu-btn").style.display = "";
+
+            this.hasFlipped = false;
+            this.hasCard = true;
+            this.currentFeedback = null;
+            document.querySelectorAll("#view-review .fb-btn").forEach(b => b.classList.remove("selected"));
+            document.getElementById("review-error-msg").style.display = "none";
+        } catch(e) { this.showError(e.message); }
+    },
+
+    async flipCard() {
+        if (this.hasFlipped || !this.hasCard) return;
+        try {
+            const data = await api("POST", "/api/review/flip", null, this.sessionToken);
+            document.getElementById("review-card-content").innerHTML = data.back_html;
+            document.getElementById("review-flip-hint").classList.add("hidden");
+            this.hasFlipped = true;
+            if (!this.currentGradable) {
+                this.showControls(true);
+            } else {
+                this.showControls(false);
+            }
+        } catch(e) { this.showError(e.message); }
+    },
+
+    async grade(g) {
+        try {
+            await api("POST", "/api/review/grade", {grade: g, feedback: this.currentFeedback}, this.sessionToken);
+            this.loadNext();
+        } catch(e) { this.showError(e.message); }
+    },
+
+    setFeedback(fb) {
+        this.currentFeedback = (this.currentFeedback === fb) ? null : fb;
+        document.querySelectorAll("#view-review .fb-btn").forEach(b => {
+            b.classList.toggle("selected", b.dataset.fb === this.currentFeedback);
+        });
+    },
+
+    async submitAutoGrade() {
+        if (this.autoGradeResult) {
+            try {
+                await api("POST", "/api/review/grade", {
+                    grade: this.autoGradeResult.grade,
+                    feedback: this.currentFeedback,
+                    response: this.autoGradeResult.response
+                }, this.sessionToken);
+                this.loadNext();
+            } catch(e) { this.showError(e.message); }
+        } else {
+            try {
+                await api("POST", "/api/review/skip", null, this.sessionToken);
+                this.loadNext();
+            } catch(e) { this.showError(e.message); }
+        }
+    },
+
+    async undo() {
+        this.closePalette();
+        try {
+            const data = await api("POST", "/api/review/undo", null, this.sessionToken);
+            if (data.ok) {
+                document.getElementById("review-done-screen").style.display = "none";
+                document.getElementById("review-stage").style.display = "block";
+                document.getElementById("review-menu-btn").style.display = "";
+                document.getElementById("review-card-content").innerHTML = data.back_html;
+                document.getElementById("review-flip-hint").classList.add("hidden");
+                document.getElementById("review-autograde-result").classList.remove("visible");
+                this.showControls(false);
+                this.hasFlipped = true;
+                this.hasCard = true;
+                this.autoGradeResult = null;
+            }
+        } catch(e) { this.showError(e.message); }
+    },
+
+    async toggleFlag() {
+        if (!this.hasCard) return;
+        this.closePalette();
+        const wasFlagged = this.currentFlags.some(f => f.flag === "edit_later");
+        try {
+            const endpoint = wasFlagged ? "/api/review/unflag" : "/api/review/flag";
+            const data = await api("POST", endpoint, {flag: "edit_later"}, this.sessionToken);
+            this.currentFlags = data.flags || [];
+            this.updateFlagIndicator();
+            showToast(wasFlagged ? "Flag removed" : "Flagged");
+        } catch(e) { this.showError(e.message); }
+    },
+
+    async editCard() {
+        if (!this.hasCard) return;
+        this.closePalette();
+        try {
+            await api("POST", "/api/review/edit", null, this.sessionToken);
+        } catch(e) { this.showError(e.message); }
+    },
+
+    async suspendCard() {
+        if (!this.hasCard) return;
+        this.closePalette();
+        try {
+            await api("POST", "/api/review/suspend", null, this.sessionToken);
+            this.loadNext();
+        } catch(e) { this.showError(e.message); }
+    },
+
+    showError(msg) {
+        const el = document.getElementById("review-error-msg");
+        el.textContent = msg;
+        el.style.display = "block";
+    }
+};
+
+/* Expose autograde hook */
+window.srAutoGrade = async function(grade, response) {
+    if (!reviewView.hasCard || reviewView.autoGradeResult) return;
+    reviewView.autoGradeResult = {grade: grade, response: response || null};
+
+    if (!reviewView.hasFlipped) {
+        try {
+            const data = await api("POST", "/api/review/flip", null, reviewView.sessionToken);
+            document.getElementById("review-card-content").innerHTML = data.back_html;
+            document.getElementById("review-flip-hint").classList.add("hidden");
+            reviewView.hasFlipped = true;
+        } catch(e) { reviewView.showError(e.message); return; }
+    }
+
+    const el = document.getElementById("review-autograde-result");
+    el.className = grade === 1 ? "correct visible" : "wrong visible";
+    el.textContent = grade === 1 ? "Correct" : "Again";
+    reviewView.showControls(true);
+};
+
+/* ── Keyboard shortcuts ── */
+document.addEventListener("keydown", (e) => {
+    const activeView = document.querySelector(".view.active");
+    if (!activeView) return;
+
+    if (activeView.id === "view-review") {
+        if (e.key === "Escape") { reviewView.togglePalette(); return; }
+        if (e.key === " " && !reviewView.hasFlipped && reviewView.hasCard) { e.preventDefault(); reviewView.flipCard(); }
+        else if (e.key === "Enter" && reviewView.hasFlipped && (reviewView.autoGradeResult || !reviewView.currentGradable)) reviewView.submitAutoGrade();
+        else if (e.key === "1" && reviewView.hasFlipped && !reviewView.autoGradeResult && reviewView.currentGradable) reviewView.grade(0);
+        else if (e.key === "2" && reviewView.hasFlipped && !reviewView.autoGradeResult && reviewView.currentGradable) reviewView.grade(1);
+        else if (e.key === "f" && reviewView.hasCard) reviewView.toggleFlag();
+        else if (e.key === "e" && reviewView.hasCard) reviewView.editCard();
+        else if (e.key === "s" && reviewView.hasCard) reviewView.suspendCard();
+        else if (e.key === "z" || e.key === "u") reviewView.undo();
+        else if (e.key === "q") showView("decks");
+    } else if (activeView.id === "view-browse") {
+        if (e.key === "Escape") browseView.closeDetail();
+    }
+});
+
+document.addEventListener("click", (e) => {
+    if (!e.target.closest("#review-palette") && !e.target.closest("#review-menu-btn")) {
+        reviewView.closePalette();
+    }
+});
+
+/* ── Init: route from hash ── */
+(function() {
+    const hash = location.hash.replace("#", "") || "decks";
+    if (hash === "review") {
+        // Can't resume a review from hash alone, go to decks
+        showView("decks");
+    } else {
+        showView(hash);
+    }
+})();
+</script>
+</body>
+</html>

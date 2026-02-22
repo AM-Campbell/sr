@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS cards (
     content_hash TEXT NOT NULL,
     display_text TEXT,
     gradable BOOLEAN NOT NULL DEFAULT 1,
+    source_line INTEGER DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(source_path, card_key, adapter)
 );

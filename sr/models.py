@@ -16,6 +16,7 @@ class Card:
     content: dict
     display_text: str = ""
     gradable: bool = True
+    source_line: int = 1
     tags: list[str] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
 

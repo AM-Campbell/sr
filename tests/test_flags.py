@@ -8,7 +8,7 @@ def _insert_test_card(conn):
     conn.execute(
         "INSERT INTO cards (source_path, card_key, adapter, content, content_hash) "
         "VALUES (?, ?, ?, ?, ?)",
-        ("/test.md", "q1", "basic_qa", '{"q":"hi"}', "abc123"))
+        ("/test.md", "q1", "mnmd", '{"q":"hi"}', "abc123"))
     card_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.execute("INSERT INTO card_state (card_id, status) VALUES (?, 'active')", (card_id,))
     conn.commit()

@@ -5,11 +5,11 @@ import time as time_mod
 
 from sr.db import init_db
 from sr.models import Card
-from sr.server_review import ReviewSession
+from sr.review_session import ReviewSession
 from sr.sync import sync_cards
 
 
-def _setup_cards(conn, cards_data, adapter_name="basic_qa"):
+def _setup_cards(conn, cards_data, adapter_name="mnmd"):
     """Helper to insert cards directly into db."""
     for source_path, key, content, gradable, tags in cards_data:
         chash = "hash_" + key
@@ -82,24 +82,32 @@ def test_grade():
     conn.close()
 
 
-def test_undo():
+def test_grade_sets_undo_stack():
+    """After grading, undo_stack has the card so undo can restore it."""
     conn = init_db(":memory:")
     _setup_cards(conn, [
         ("/test.md", "q1", {"q": "Q1", "a": "A1"}, True, []),
         ("/test.md", "q2", {"q": "Q2", "a": "A2"}, True, []),
     ])
     session = ReviewSession(conn, None, None, get_adapter_fn=lambda _: FakeAdapter())
-    session.get_next_card()
+    card = session.get_next_card()
+    card_id = card["id"]
     session.flip()
     session.grade_current(1)
-    assert session.reviewed == 1
 
-    # Undo
-    prev = session.previous_card
-    session.reviewed_ids.discard(prev["id"])
-    session.current_card = prev
-    session.previous_card = None
-    assert prev["id"] not in session.reviewed_ids
+    # After grading, undo_stack should have the card we just graded
+    assert len(session.undo_stack) == 1
+    assert session.undo_stack[-1]["card"]["id"] == card_id
+    # The graded card should be in reviewed_ids
+    assert card_id in session.reviewed_ids
+    assert session.reviewed == 1
+    # current_card should be cleared
+    assert session.current_card is None
+
+    # The next card should be a different one
+    next_card = session.get_next_card()
+    assert next_card is not None
+    assert next_card["id"] != card_id
     conn.close()
 
 

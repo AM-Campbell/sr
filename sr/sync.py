@@ -66,6 +66,9 @@ def sync_cards(conn: sqlite3.Connection,
 
             if row["content_hash"] == chash:
                 stats["unchanged"] += 1
+                conn.execute(
+                    "UPDATE cards SET display_text=?, source_line=? WHERE id=?",
+                    (card.display_text, card.source_line, row["id"]))
                 _sync_tags(conn, row["id"], card.tags)
             else:
                 old_id = row["id"]
@@ -125,11 +128,11 @@ def _insert_card(conn: sqlite3.Connection, source_path: str, card_key: str,
                  adapter_name: str, card: Card, chash: str,
                  status: str = "active") -> int:
     cur = conn.execute("""
-        INSERT INTO cards (source_path, card_key, adapter, content, content_hash, display_text, gradable)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO cards (source_path, card_key, adapter, content, content_hash, display_text, gradable, source_line)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (source_path, card_key, adapter_name,
           json.dumps(card.content, sort_keys=True), chash,
-          card.display_text, card.gradable))
+          card.display_text, card.gradable, card.source_line))
     card_id = cur.lastrowid
     conn.execute("INSERT INTO card_state (card_id, status) VALUES (?, ?)", (card_id, status))
     _sync_tags(conn, card_id, card.tags)
@@ -176,9 +179,7 @@ def _sync_relations(conn: sqlite3.Connection, scan_results, scheduler):
 
 
 def _upsert_recommendation(conn: sqlite3.Connection, rec: Recommendation, scheduler):
-    sched_id = getattr(scheduler, 'scheduler_id',
-                       type(scheduler).__module__.split("_")[-1]
-                       if hasattr(scheduler, '__module__') else "unknown")
+    sched_id = scheduler.scheduler_id
     conn.execute("""
         INSERT OR REPLACE INTO recommendations (card_id, scheduler_id, time, precision_seconds)
         VALUES (?, ?, ?, ?)
