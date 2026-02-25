@@ -57,7 +57,20 @@ body {
 }
 .nav-left { flex: 1; display: flex; align-items: center; }
 .nav-center { display: flex; align-items: center; gap: 0.25rem; }
-.nav-right { flex: 1; }
+.nav-right { flex: 1; display: flex; align-items: center; justify-content: flex-end; }
+.scan-btn {
+    display: flex; align-items: center; gap: 0.35rem;
+    padding: 0.35rem 0.55rem; border: none; border-radius: 4px;
+    background: none; color: var(--text-secondary); cursor: pointer;
+    font-size: 0.8125rem; font-family: inherit;
+    transition: color 120ms ease, background 120ms ease;
+}
+.scan-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+.scan-btn:disabled { opacity: 0.5; cursor: default; }
+.scan-btn .scan-spinner { display: none; width: 12px; height: 12px; border: 2px solid var(--text-secondary); border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; }
+.scan-btn.scanning .scan-spinner { display: inline-block; }
+.scan-btn.scanning .scan-icon { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .vault-selector {
     position: relative;
 }
@@ -563,7 +576,13 @@ code { font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 0.85em;
         <button class="nav-link" onclick="showView('decks')">Decks</button>
         <button class="nav-link" onclick="showView('browse')">Browse</button>
     </div>
-    <div class="nav-right"></div>
+    <div class="nav-right">
+        <button class="scan-btn" onclick="scanVault()" title="Scan vault for new/changed cards">
+            <span class="scan-icon">&#x21bb;</span>
+            <span class="scan-spinner"></span>
+            Scan
+        </button>
+    </div>
 </nav>
 
 <div id="toast"></div>
@@ -704,6 +723,28 @@ function showToast(msg) {
     el.classList.add("visible");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove("visible"), 1500);
+}
+
+/* ── Scan ── */
+async function scanVault() {
+    const btn = document.querySelector(".scan-btn");
+    btn.disabled = true;
+    btn.classList.add("scanning");
+    try {
+        const res = await fetch("/api/scan", { method: "POST" });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Scan failed"); }
+        const data = await res.json();
+        const parts = [];
+        if (data.new) parts.push(data.new + " new");
+        if (data.updated) parts.push(data.updated + " updated");
+        if (data.deleted) parts.push(data.deleted + " deleted");
+        showToast(parts.length ? "Scan: " + parts.join(", ") : "No changes");
+        // Refresh current view
+        const hash = location.hash.replace("#", "") || "decks";
+        if (hash === "decks") decksView.loaded = false;
+        showView(hash);
+    } catch(e) { showToast(e.message); }
+    finally { btn.disabled = false; btn.classList.remove("scanning"); }
 }
 
 /* ── View switching ── */

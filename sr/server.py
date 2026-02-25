@@ -400,6 +400,10 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             session.current_card = None
             self._json_response({"ok": True, "suspended": True})
 
+        # ── Scan ──
+        elif path == "/api/scan":
+            self._handle_scan()
+
         # ── Vault ──
         elif path == "/api/vault/switch":
             self._handle_vault_switch()
@@ -446,6 +450,31 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
             get_adapter_fn=AppHandler._get_adapter_fn)
         AppHandler._review_session = session
         self._json_response({"session_token": session.token})
+
+    # ── Scan helpers ────────────────────────────────────────────────
+
+    def _handle_scan(self):
+        import pathlib
+        from sr.scanner import scan_sources
+        from sr.sync import sync_cards
+
+        sr_dir = AppHandler.sr_dir
+        if not sr_dir:
+            self._error(500, "No vault configured")
+            return
+        vault_root = pathlib.Path(sr_dir).parent
+
+        def get_adapter(name):
+            if AppHandler._get_adapter_fn:
+                return AppHandler._get_adapter_fn(name)
+            return load_adapter(name, sr_dir)
+
+        try:
+            results = scan_sources([vault_root], get_adapter)
+            stats = sync_cards(self.conn, results, AppHandler._scheduler, [vault_root])
+            self._json_response(stats)
+        except Exception as e:
+            self._error(500, str(e))
 
     # ── Vault helpers ────────────────────────────────────────────────
 
