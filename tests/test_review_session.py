@@ -227,3 +227,113 @@ def test_remaining_count():
     session.grade_current(1)
     assert session.remaining_count() == 1
     conn.close()
+
+
+def _setup_followed_by(conn, upstream_id, downstream_id):
+    """Insert an is_followed_by_on_correct relation."""
+    conn.execute(
+        "INSERT INTO card_relations (upstream_card_id, downstream_card_id, relation_type) VALUES (?, ?, 'is_followed_by_on_correct')",
+        (upstream_id, downstream_id))
+    conn.commit()
+
+
+def test_followed_by_on_correct():
+    """Grade A correctly → next card is downstream B."""
+    conn = init_db(":memory:")
+    _setup_cards(conn, [
+        ("/test.md", "q1", {"q": "Q1", "a": "A1"}, True, []),
+        ("/test.md", "q2", {"q": "Q2", "a": "A2"}, True, []),
+    ])
+    _setup_followed_by(conn, 1, 2)
+    # Give card 1 an earlier recommendation so it's served first
+    conn.execute("INSERT INTO recommendations (card_id, scheduler_id, time, precision_seconds) VALUES (1, 'test', '2000-01-01 00:00:00', 3600)")
+    conn.commit()
+
+    session = ReviewSession(conn, None, None, get_adapter_fn=lambda _: FakeAdapter())
+    card_a = session.get_next_card()
+    assert card_a["id"] == 1
+    session.flip()
+    session.grade_current(1)  # correct
+
+    card_b = session.get_next_card()
+    assert card_b is not None
+    assert card_b["id"] == 2
+    conn.close()
+
+
+def test_followed_by_on_correct_wrong_grade():
+    """Grade wrong → followup cleared, normal card served."""
+    conn = init_db(":memory:")
+    _setup_cards(conn, [
+        ("/test.md", "q1", {"q": "Q1", "a": "A1"}, True, []),
+        ("/test.md", "q2", {"q": "Q2", "a": "A2"}, True, []),
+        ("/test.md", "q3", {"q": "Q3", "a": "A3"}, True, []),
+    ])
+    _setup_followed_by(conn, 1, 2)
+    # Ensure card 1 is served first
+    conn.execute("INSERT INTO recommendations (card_id, scheduler_id, time, precision_seconds) VALUES (1, 'test', '2000-01-01 00:00:00', 3600)")
+    conn.commit()
+
+    session = ReviewSession(conn, None, None, get_adapter_fn=lambda _: FakeAdapter())
+    card_a = session.get_next_card()
+    assert card_a["id"] == 1
+    # Followup should be pre-fetched
+    assert session._followup_card is not None
+    assert session._followup_card["id"] == 2
+    session.flip()
+    session.grade_current(0)  # wrong — followup should be cleared
+
+    assert session._followup_card is None
+    conn.close()
+
+
+def test_followed_by_on_correct_chain():
+    """A→B→C chain works through consecutive correct answers."""
+    conn = init_db(":memory:")
+    _setup_cards(conn, [
+        ("/test.md", "q1", {"q": "Q1", "a": "A1"}, True, []),
+        ("/test.md", "q2", {"q": "Q2", "a": "A2"}, True, []),
+        ("/test.md", "q3", {"q": "Q3", "a": "A3"}, True, []),
+    ])
+    _setup_followed_by(conn, 1, 2)
+    _setup_followed_by(conn, 2, 3)
+    conn.execute("INSERT INTO recommendations (card_id, scheduler_id, time, precision_seconds) VALUES (1, 'test', '2000-01-01 00:00:00', 3600)")
+    conn.commit()
+
+    session = ReviewSession(conn, None, None, get_adapter_fn=lambda _: FakeAdapter())
+    card = session.get_next_card()
+    assert card["id"] == 1
+    session.flip()
+    session.grade_current(1)
+
+    card = session.get_next_card()
+    assert card["id"] == 2
+    session.flip()
+    session.grade_current(1)
+
+    card = session.get_next_card()
+    assert card["id"] == 3
+    conn.close()
+
+
+def test_followed_by_on_correct_already_reviewed():
+    """Downstream already reviewed → followup not cached, normal query used."""
+    conn = init_db(":memory:")
+    _setup_cards(conn, [
+        ("/test.md", "q1", {"q": "Q1", "a": "A1"}, True, []),
+        ("/test.md", "q2", {"q": "Q2", "a": "A2"}, True, []),
+    ])
+    _setup_followed_by(conn, 1, 2)
+    conn.execute("INSERT INTO recommendations (card_id, scheduler_id, time, precision_seconds) VALUES (1, 'test', '2000-01-01 00:00:00', 3600)")
+    conn.commit()
+
+    session = ReviewSession(conn, None, None, get_adapter_fn=lambda _: FakeAdapter())
+
+    # Mark card 2 as already reviewed
+    session._mark_reviewed(2)
+
+    card_a = session.get_next_card()
+    assert card_a["id"] == 1
+    # Followup (card 2) was already reviewed, so it should not be cached
+    assert session._followup_card is None
+    conn.close()

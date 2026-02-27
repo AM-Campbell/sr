@@ -297,6 +297,7 @@ class AppHandler(http.server.BaseHTTPRequestHandler):
                 if session.scheduler and hasattr(session.scheduler, 'restore_card_state'):
                     old_sched = entry.get("old_sched_state")
                     session.scheduler.restore_card_state(card_id, old_sched)
+            session._followup_card = entry.get("prev_followup")
             session.current_card = prev
             session.serve_time = time.time()
             session.flip_time = time.time()

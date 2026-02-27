@@ -32,6 +32,7 @@ class ReviewSession:
         self.session_id = str(uuid.uuid4())
         self.token = str(uuid.uuid4())
         self.current_card = None
+        self._followup_card: dict | None = None
         self.undo_stack: list[dict] = []  # stack of {card, excluded_ids}
         self.flip_time = None
         self.serve_time = None
@@ -75,7 +76,28 @@ class ReviewSession:
         extra = (" AND " + " AND ".join(clauses)) if clauses else ""
         return extra, params
 
+    def _fetch_followup(self, card_id: int) -> dict | None:
+        """Query for an is_followed_by_on_correct downstream card."""
+        row = self.conn.execute(f"""
+            SELECT c.id, c.source_path, c.adapter, c.content, c.gradable, c.source_line
+            FROM card_relations cr
+            JOIN cards c ON c.id = cr.downstream_card_id
+            JOIN card_state cs ON c.id = cs.card_id
+            WHERE cr.upstream_card_id = ? AND cr.relation_type = 'is_followed_by_on_correct'
+              AND cs.status = 'active' AND c.gradable = 1
+              AND c.id NOT IN (SELECT card_id FROM {self._reviewed_table})
+            LIMIT 1
+        """, (card_id,)).fetchone()
+        return dict(row) if row else None
+
     def get_next_card(self) -> dict | None:
+        if self._followup_card:
+            self.current_card = self._followup_card
+            self._followup_card = self._fetch_followup(self.current_card["id"])
+            self.serve_time = time.time()
+            self.flip_time = None
+            return self.current_card
+
         extra, params = self._filter_clause()
         row = self.conn.execute(f"""
             SELECT c.id, c.source_path, c.adapter, c.content, c.gradable, c.source_line
@@ -91,6 +113,7 @@ class ReviewSession:
             return None
 
         self.current_card = dict(row)
+        self._followup_card = self._fetch_followup(self.current_card["id"])
         self.serve_time = time.time()
         self.flip_time = None
         return self.current_card
@@ -167,9 +190,12 @@ class ReviewSession:
         if restudy_soon:
             # Let the card come back when its recommendation is due
             self._unmark_reviewed(card_id)
+        prev_followup = self._followup_card
+        if grade != 1:
+            self._followup_card = None
         self.undo_stack.append({"card": self.current_card, "excluded_ids": excluded,
                                 "old_rec": old_rec, "old_sched_state": old_sched_state,
-                                "grade": grade})
+                                "grade": grade, "prev_followup": prev_followup})
         self.reviewed += 1
         self.current_card = None
 
@@ -191,7 +217,10 @@ class ReviewSession:
         self._mark_reviewed(card_id)
         self.skipped_ids.add(card_id)
         excluded = self._exclude_mutually_exclusive(card_id)
-        self.undo_stack.append({"card": self.current_card, "excluded_ids": excluded, "was_skip": True})
+        prev_followup = self._followup_card
+        self._followup_card = None
+        self.undo_stack.append({"card": self.current_card, "excluded_ids": excluded,
+                                "was_skip": True, "prev_followup": prev_followup})
         self.skipped += 1
         self.current_card = None
 
